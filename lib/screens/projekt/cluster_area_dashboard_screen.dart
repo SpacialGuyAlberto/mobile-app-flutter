@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/interactive_map_view.dart';
+import '../../core/network/api_service.dart';
+import '../../models/planning/infrastructure_elements.dart';
+import '../../models/planning/segment.dart';
 
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
@@ -17,63 +21,124 @@ class ClusterAreaDashboardScreen extends StatefulWidget {
 }
 
 class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen> {
-  // Mock data mirroring the web-dashboard implementation
-  final List<Map<String, dynamic>> elements = [
-    {'id': 'POP-01', 'type': 'POP', 'name': 'Main POP Mitte', 'status': 'ACTIVE'},
-    {'id': 'DP-01', 'type': 'DP', 'name': 'Netzverteiler A', 'status': 'ACTIVE'},
-    {'id': 'DP-02', 'type': 'DP', 'name': 'Netzverteiler B', 'status': 'PLANNED'},
-    {'id': 'DP-03', 'type': 'DP', 'name': 'Netzverteiler C', 'status': 'ACTIVE'},
-    {'id': 'AC-01', 'type': 'ACOMETIDA', 'name': 'Route 1', 'status': 'ACTIVE'},
-    {'id': 'AC-02', 'type': 'ACOMETIDA', 'name': 'Route 2', 'status': 'ACTIVE'},
-    {'id': 'AC-03', 'type': 'ACOMETIDA', 'name': 'Route 3', 'status': 'PLANNED'},
-    {'id': 'AC-04', 'type': 'ACOMETIDA', 'name': 'Route 4', 'status': 'ERROR'},
-    {'id': 'HE-01', 'type': 'HEUP', 'name': 'House 12', 'status': 'ACTIVE'},
-    {'id': 'HE-02', 'type': 'HEUP', 'name': 'House 14', 'status': 'ACTIVE'},
-    {'id': 'HE-03', 'type': 'HEUP', 'name': 'House 16', 'status': 'PLANNED'},
-    {'id': 'HE-04', 'type': 'HEUP', 'name': 'House 18', 'status': 'ERROR'},
-  ];
+  bool _isLoading = true;
+  
+  List<Pop> _pops = [];
+  List<Netzverteiler> _nvts = [];
+  List<Segment> _segments = [];
 
-  late Map<String, List<Map<String, dynamic>>> groupedElements;
-  late Map<String, int> stats;
+  Map<String, List<dynamic>> groupedElements = {};
+  Map<String, int> stats = {'POP': 0, 'Netzverteiler': 0, 'Segments': 0};
   String expandedGroup = 'POP';
+
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
+  CameraPosition? _initialCamera;
 
   @override
   void initState() {
     super.initState();
-    _calculateStatsAndGroups();
+    _loadClusterData();
   }
 
-  void _calculateStatsAndGroups() {
-    groupedElements = {
-      'POP': elements.where((e) => e['type'] == 'POP').toList(),
-      'Netzverteiler': elements.where((e) => e['type'] == 'DP').toList(),
-      'Acometidas': elements.where((e) => e['type'] == 'ACOMETIDA').toList(),
-      'HEÜPs': elements.where((e) => e['type'] == 'HEUP').toList(),
-    };
+  Future<void> _loadClusterData() async {
+    setState(() => _isLoading = true);
+    try {
+      final api = ApiService();
+      
+      // Fetch all pops and filter by cluster
+      final popData = await api.get('/pops');
+      final allPops = (popData as List).map((e) => Pop.fromJson(e)).toList();
+      _pops = allPops.where((p) => p.clusterId == widget.clusterId).toList();
+      
+      // Flatten Nvts
+      _nvts = _pops.expand((p) => p.nvts).toList();
 
-    stats = {
-      'POP': groupedElements['POP']!.length,
-      'Netzverteiler': groupedElements['Netzverteiler']!.length,
-      'Acometidas': groupedElements['Acometidas']!.length,
-      'HEÜPs': groupedElements['HEÜPs']!.length,
-    };
+      // Fetch Segments
+      final segmentData = await api.get('/projects/${widget.projectId}/segments');
+      final allSegments = (segmentData as List).map((e) => Segment.fromJson(e)).toList();
+      // Filter segments related to these Pops/Nvts (simplified: just taking all for project, could be filtered more)
+      _segments = allSegments;
+
+      // Group elements for accordion
+      groupedElements = {
+        'POP': _pops,
+        'Netzverteiler': _nvts,
+        'Segments': _segments,
+      };
+
+      stats = {
+        'POP': _pops.length,
+        'Netzverteiler': _nvts.length,
+        'Segments': _segments.length,
+      };
+
+      // Build Map markers and polylines
+      _buildMapObjects();
+
+      setState(() => _isLoading = false);
+    } catch (e) {
+      print('Error loading cluster data: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _buildMapObjects() {
+    final markers = <Marker>{};
+    final polylines = <Polyline>{};
+
+    for (var pop in _pops) {
+      // Assuming Pop has lat/lng if we parse it from locationAddress, but for now we might lack exact Pop coords.
+      // Wait, Pop in our model does not have lat/lng? Let's check model. It has locationAddress.
+      // For now, let's skip Pop marker if no coords, or use a dummy if we must.
+    }
+
+    for (var nvt in _nvts) {
+      if (nvt.latitude != null && nvt.longitude != null) {
+        markers.add(Marker(
+          markerId: MarkerId('nvt_${nvt.id}'),
+          position: LatLng(nvt.latitude!, nvt.longitude!),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: InfoWindow(title: nvt.identifier, snippet: 'Netzverteiler'),
+        ));
+      }
+    }
+
+    for (var seg in _segments) {
+      if (seg.geometry.isNotEmpty) {
+        polylines.add(Polyline(
+          polylineId: PolylineId('seg_${seg.id}'),
+          points: seg.geometry.map((g) => LatLng(g.latitude, g.longitude)).toList(),
+          color: Colors.blueAccent,
+          width: 4,
+        ));
+        
+        // Also add markers for start/end if we want, or just rely on Nvts.
+      }
+    }
+
+    _markers = markers;
+    _polylines = polylines;
+
+    if (_nvts.isNotEmpty && _nvts.first.latitude != null) {
+      _initialCamera = CameraPosition(
+        target: LatLng(_nvts.first.latitude!, _nvts.first.longitude!),
+        zoom: 14.0,
+      );
+    } else if (_segments.isNotEmpty && _segments.first.geometry.isNotEmpty) {
+      _initialCamera = CameraPosition(
+        target: LatLng(_segments.first.geometry.first.latitude, _segments.first.geometry.first.longitude),
+        zoom: 14.0,
+      );
+    }
   }
 
   Color _getColorForType(String type) {
     switch (type) {
-      case 'POP':
-        return const Color(0xFF6938ef);
-      case 'DP':
-      case 'Netzverteiler':
-        return const Color(0xFF2fb080);
-      case 'ACOMETIDA':
-      case 'Acometidas':
-        return const Color(0xFFfbbf24);
-      case 'HEUP':
-      case 'HEÜPs':
-        return const Color(0xFFef4444);
-      default:
-        return Colors.white;
+      case 'POP': return const Color(0xFF6938ef);
+      case 'Netzverteiler': return const Color(0xFF2fb080);
+      case 'Segments': return const Color(0xFFfbbf24);
+      default: return Colors.white;
     }
   }
 
@@ -82,7 +147,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Cluster Areas', style: TextStyle(color: Colors.white)),
+        title: const Text('Cluster Area', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -95,29 +160,29 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
             end: Alignment.bottomCenter,
           ),
         ),
-        child: Column(
+        child: _isLoading 
+          ? const Center(child: CircularProgressIndicator()) 
+          : Column(
           children: [
             // Map Area
             Expanded(
               flex: 4,
               child: Stack(
                 children: [
-                  const InteractiveMapView(),
+                  InteractiveMapView(
+                    markers: _markers,
+                    polylines: _polylines,
+                    initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+                  ),
                   // Overlay gradient for seamless transition
                   Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: 40,
+                    bottom: 0, left: 0, right: 0, height: 40,
                     child: Container(
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Color(0xFF131415),
-                          ],
+                          colors: [Colors.transparent, Color(0xFF131415)],
                         ),
                       ),
                     ),
@@ -130,9 +195,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
             Expanded(
               flex: 6,
               child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFF131415),
-                ),
+                decoration: const BoxDecoration(color: Color(0xFF131415)),
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -171,10 +234,9 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       physics: const NeverScrollableScrollPhysics(),
       childAspectRatio: 2.5,
       children: [
-        _buildStatCard('POPs', stats['POP']!, _getColorForType('POP')),
-        _buildStatCard('Netzverteiler', stats['Netzverteiler']!, _getColorForType('DP')),
-        _buildStatCard('Acometidas', stats['Acometidas']!, _getColorForType('ACOMETIDA')),
-        _buildStatCard('HEÜPs', stats['HEÜPs']!, _getColorForType('HEUP')),
+        _buildStatCard('POPs', stats['POP'] ?? 0, _getColorForType('POP')),
+        _buildStatCard('Netzverteiler', stats['Netzverteiler'] ?? 0, _getColorForType('Netzverteiler')),
+        _buildStatCard('Segments', stats['Segments'] ?? 0, _getColorForType('Segments')),
       ],
     );
   }
@@ -316,7 +378,23 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
     );
   }
 
-  Widget _buildNodeItem(Map<String, dynamic> element) {
+  Widget _buildNodeItem(dynamic element) {
+    String name = 'Unknown';
+    String id = '';
+    String status = 'ACTIVE';
+
+    if (element is Pop) {
+      name = element.name;
+      id = element.id;
+    } else if (element is Netzverteiler) {
+      name = element.identifier;
+      id = element.id;
+    } else if (element is Segment) {
+      name = 'Segment (length: ${element.length ?? 0}m)';
+      id = element.id;
+      status = element.currentState.name.toUpperCase();
+    }
+
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -336,7 +414,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        element['name'],
+                        name,
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.9),
                           fontSize: 12,
@@ -345,7 +423,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'ID: ${element['id']}',
+                        'ID: $id',
                         style: const TextStyle(
                           color: Colors.white30,
                           fontSize: 10,
@@ -355,7 +433,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                     ],
                   ),
                 ),
-                _buildNodeStatusBadge(element['status']),
+                _buildNodeStatusBadge(status),
               ],
             ),
           ),

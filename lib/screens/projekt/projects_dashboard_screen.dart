@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/interactive_map_view.dart';
+import '../../core/network/api_service.dart';
+import '../../models/planning/project.dart';
 
 class ProjectsDashboardScreen extends StatefulWidget {
   const ProjectsDashboardScreen({Key? key}) : super(key: key);
@@ -13,12 +16,53 @@ class ProjectsDashboardScreen extends StatefulWidget {
 }
 
 class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
-  String selectedProject = 'Berlin Fiber Deployment';
+  String selectedProject = 'All Projects';
+  bool _isLoading = true;
+  List<Project> _projects = [];
+  Set<Marker> _markers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProjects();
+  }
+
+  Future<void> _loadProjects() async {
+    setState(() => _isLoading = true);
+    try {
+      final api = ApiService();
+      final data = await api.get('/projects');
+      final List<dynamic> jsonList = data;
+      
+      final projects = jsonList.map((json) => Project.fromJson(json)).toList();
+      final markers = <Marker>{};
+
+      for (var p in projects) {
+        if (p.geometry.isNotEmpty) {
+          markers.add(Marker(
+            markerId: MarkerId(p.id),
+            position: LatLng(p.geometry.first.latitude, p.geometry.first.longitude),
+            infoWindow: InfoWindow(title: p.name, snippet: p.description),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          ));
+        }
+      }
+
+      setState(() {
+        _projects = projects;
+        _markers = markers;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading projects: $e');
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // Make scaffold transparent to show the container gradient
+      backgroundColor: Colors.transparent, 
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -27,42 +71,31 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
             end: Alignment.bottomCenter,
           ),
         ),
-        child: SingleChildScrollView(
+        child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Header
               _buildHeader(),
               const SizedBox(height: 20),
-
-              // 2. KPI Cards
               _buildKPIGrid(),
               const SizedBox(height: 20),
-
-              // 3. Map Placeholder
               _buildMapPlaceholder(),
               const SizedBox(height: 20),
-
-              // 4. High Risk Segments
               _buildHighRiskPanel(),
               const SizedBox(height: 20),
-
-              // 5. Action Center
               _buildActionCenter(),
               const SizedBox(height: 20),
-
-              // 6. Active Projects Overview
               _buildActiveProjectsOverview(),
-              const SizedBox(height: 80), // Extra bottom padding for FAB
+              const SizedBox(height: 80),
             ],
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          context.push('/create_segment');
-        },
+        onPressed: () => context.push('/create_segment'),
         backgroundColor: Colors.greenAccent,
         icon: const Icon(Icons.add_location_alt, color: Colors.black),
         label: const Text('Create Segment', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
@@ -88,7 +121,7 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.05),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Color(0xFF2D2E33)),
+            border: Border.all(color: const Color(0xFF2D2E33)),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
@@ -104,7 +137,9 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
                   });
                 }
               },
-              items: <String>['Berlin Fiber Deployment', 'Munich Network Expansion', 'All Projects']
+              items: ['All Projects', ..._projects.map((p) => p.name)]
+                  .toSet()
+                  .toList()
                   .map<DropdownMenuItem<String>>((String value) {
                 return DropdownMenuItem<String>(
                   value: value,
@@ -177,7 +212,7 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
           ),
           
           // Using our new InteractiveMapView
-          const InteractiveMapView(),
+          InteractiveMapView(markers: _markers),
 
           Container(
             padding: const EdgeInsets.all(12),
@@ -314,56 +349,32 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        FutureBuilder<List<dynamic>>(
-          future: _fetchProjects(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-              // Fallback to static if backend fails
-              return Column(
-                children: [
-                  _buildProjectListItem('1', 'Berlin Fiber Deployment', 'Jan 2024 - Dec 2024', 0.78),
-                  const SizedBox(height: 12),
-                  _buildProjectListItem('2', 'Munich Network Expansion', 'Mar 2024 - Nov 2024', 0.35),
-                ],
+        if (_projects.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text('No active projects found.', style: TextStyle(color: Colors.white70)),
+          )
+        else
+          Column(
+            children: _projects.map((p) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: _buildProjectListItem(
+                  p.id, 
+                  p.name, 
+                  'Starts: ${p.startDate?.toLocal().toString().split(' ')[0] ?? 'TBD'}', 
+                  0.5
+                ),
               );
-            }
-
-            final projects = snapshot.data!;
-            return Column(
-              children: projects.map((p) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: _buildProjectListItem(
-                    p['id'].toString(), 
-                    p['name'] ?? 'Unknown', 
-                    'Status: ${p['status'] ?? 'ON_TRACK'}', 
-                    0.5
-                  ),
-                );
-              }).toList(),
-            );
-          },
-        ),
+            }).toList(),
+          ),
       ],
     );
   }
 
-  Future<List<dynamic>> _fetchProjects() async {
-    try {
-      final response = await http.get(Uri.parse('http://localhost:8080/api/v1/planning/projects'));
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-    } catch (e) {
-      // ignore
-    }
-    return [];
-  }
-
   Widget _buildProjectListItem(String id, String name, String dates, double progress) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         context.push('/project_clusters/$id');
       },
