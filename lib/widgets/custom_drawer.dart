@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
+import '../../models/auth/user_role.dart';
 import '../core/theme.dart';
 
 class CustomDrawer extends ConsumerWidget {
@@ -14,7 +15,7 @@ class CustomDrawer extends ConsumerWidget {
     List<Widget> menuItems = [];
 
     // Obrero specific
-    if (authState.role == UserRole.obrero) {
+    if (authState.user?.role == UserRole.fieldExpert) {
       menuItems.addAll([
         _buildDrawerItem(context, Icons.map_outlined, 'My Segments (Map)', '/obrero_map'),
         _buildDrawerItem(context, Icons.work_outline, 'Work Logs', '/work_logs'),
@@ -23,7 +24,7 @@ class CustomDrawer extends ConsumerWidget {
     }
 
     // Projekt (Project Manager) FULL SIDEBAR matching Web Dashboard
-    if (authState.role == UserRole.projekt) {
+    if (authState.user?.role == UserRole.projectManager) {
       menuItems.addAll([
         _buildDrawerItem(context, Icons.home_outlined, 'Home (Command Center)', '/'),
         
@@ -64,7 +65,7 @@ class CustomDrawer extends ConsumerWidget {
     }
 
     // Bauleiter (Site Manager) specific
-    if (authState.role == UserRole.bauleiter) {
+    if (authState.user?.role == UserRole.manager) {
       menuItems.addAll([
         _buildDrawerItem(context, Icons.map_outlined, 'Project Map (AI Extract)', '/bauleiter_map'),
         _buildDrawerItem(context, Icons.group_outlined, 'Field Crews', '/crews'),
@@ -93,11 +94,11 @@ class CustomDrawer extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          authState.userName,
+                          '${authState.user?.firstName ?? ''} ${authState.user?.lastName ?? ''}',
                           style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          authState.role.toString().split('.').last.toUpperCase(),
+                          authState.user?.role.toString().split('.').last.toUpperCase() ?? '',
                           style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
                         ),
                       ],

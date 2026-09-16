@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
+import '../models/auth/user_role.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/dashboard/dashboard_layout.dart';
 import '../screens/obrero/work_logs_screen.dart';
@@ -47,18 +48,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) {
           final authState = ref.watch(authProvider);
+          final userRole = authState.user?.role;
           String title = 'QuarkBau';
           
-          if (authState.role == UserRole.obrero) {
+          if (userRole == UserRole.fieldExpert) {
             if (state.matchedLocation == '/') title = 'My Segments';
             if (state.matchedLocation == '/obrero_map') title = 'My Segments';
             if (state.matchedLocation == '/work_logs') title = 'Work Logs';
             if (state.matchedLocation == '/schedule') title = 'My Schedule';
-          } else if (authState.role == UserRole.projekt) {
+          } else if (userRole == UserRole.projectManager) {
             if (state.matchedLocation == '/') title = 'Command Center';
             if (state.matchedLocation == '/risks') title = 'Risk Dashboard';
             if (state.matchedLocation == '/create_segment') title = 'Create Segment';
-          } else if (authState.role == UserRole.bauleiter) {
+          } else if (userRole == UserRole.manager) {
             if (state.matchedLocation == '/') title = 'Project Map';
             if (state.matchedLocation == '/bauleiter_map') title = 'Project Map';
             if (state.matchedLocation == '/crews') title = 'Field Crews';
@@ -72,9 +74,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/',
             builder: (context, state) {
               final authState = ref.watch(authProvider);
-              if (authState.role == UserRole.obrero) return const ObreroMapScreen();
-              if (authState.role == UserRole.projekt) return const ProjectsDashboardScreen();
-              if (authState.role == UserRole.bauleiter) return const BauleiterMapScreen();
+              final userRole = authState.user?.role;
+              if (userRole == UserRole.fieldExpert) return const ObreroMapScreen();
+              if (userRole == UserRole.projectManager) return const ProjectsDashboardScreen();
+              if (userRole == UserRole.manager) return const BauleiterMapScreen();
               return const Center(child: Text('Welcome to QuarkBau'));
             },
           ),
