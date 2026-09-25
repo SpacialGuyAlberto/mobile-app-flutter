@@ -42,6 +42,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
   CameraPosition? _initialCamera;
+  GoogleMapController? _mapController;
 
   bool isMapEditMode = false;
   String? activeDrawTool;
@@ -182,11 +183,24 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
 
     for (var seg in _segments) {
       if (seg.geometry.isNotEmpty) {
+        final points = seg.geometry.map((g) => LatLng(g.latitude, g.longitude)).toList();
+        
+        // Outer thick outline for contrast
         polylines.add(Polyline(
-          polylineId: PolylineId('seg_${seg.id}'),
-          points: seg.geometry.map((g) => LatLng(g.latitude, g.longitude)).toList(),
-          color: const Color(0xFF6938ef), // Violet line for segments
+          polylineId: PolylineId('seg_out_${seg.id}'),
+          points: points,
+          color: const Color(0xFF131415), // Very dark border
+          width: 10,
+          zIndex: 1,
+        ));
+        
+        // Inner bright core
+        polylines.add(Polyline(
+          polylineId: PolylineId('seg_in_${seg.id}'),
+          points: points,
+          color: const Color(0xFF00E5FF), // Neon Cyan (High visibility on satellite)
           width: 5,
+          zIndex: 2,
         ));
       }
     }
@@ -406,7 +420,6 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
     _loadClusterData();
   }
 
-  GoogleMapController? _mapController;
 
   void _openStreetView() async {
     final center = _initialCamera?.target ?? const LatLng(52.5200, 13.4050);
@@ -459,6 +472,22 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           right: 16,
           child: Column(
             children: [
+              FloatingActionButton(
+                heroTag: 'zoomInBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
+                child: const Icon(Icons.add, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton(
+                heroTag: 'zoomOutBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
+                child: const Icon(Icons.remove, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 24),
               FloatingActionButton(
                 heroTag: 'svBtn',
                 mini: true,

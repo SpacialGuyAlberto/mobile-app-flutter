@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class InteractiveMapView extends StatelessWidget {
@@ -42,6 +44,9 @@ class InteractiveMapView extends StatelessWidget {
           compassEnabled: false,
           mapToolbarEnabled: false,
           zoomControlsEnabled: true,
+          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
+            Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+          },
         ),
       ),
     );

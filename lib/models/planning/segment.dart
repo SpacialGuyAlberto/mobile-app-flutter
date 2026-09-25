@@ -68,32 +68,38 @@ class Segment {
     return Segment(
       id: json['id'].toString(),
       workType: WorkType.values.firstWhere(
-        (w) => w.toString().split('.').last == json['workType'],
+        (w) => w.toString().split('.').last.toUpperCase() == json['workType']?.toString().toUpperCase(),
         orElse: () => WorkType.trenching,
       ),
       currentState: WorkflowState.values.firstWhere(
-        (w) => w.toString().split('.').last == json['currentState'],
+        (w) => w.toString().split('.').last.toUpperCase() == json['currentState']?.toString().toUpperCase(),
         orElse: () => WorkflowState.plan,
       ),
       streetName: json['streetName'],
       streetType: json['streetType'],
       soilType: json['soilType'],
-      length: json['length']?.toDouble(),
-      startLatitude: json['startLatitude']?.toDouble(),
-      startLongitude: json['startLongitude']?.toDouble(),
-      endLatitude: json['endLatitude']?.toDouble(),
-      endLongitude: json['endLongitude']?.toDouble(),
-      elevation: json['elevation']?.toDouble(),
-      geometry: json['geometry'] != null
+      length: (json['length'] as num?)?.toDouble(),
+      startLatitude: (json['startLatitude'] as num?)?.toDouble(),
+      startLongitude: (json['startLongitude'] as num?)?.toDouble(),
+      endLatitude: (json['endLatitude'] as num?)?.toDouble(),
+      endLongitude: (json['endLongitude'] as num?)?.toDouble(),
+      elevation: (json['elevation'] as num?)?.toDouble(),
+      geometry: json['geometry'] != null && json['geometry'] is List
           ? (json['geometry'] as List).map((e) => GeometryPoint.fromJson(e)).toList()
-          : const [],
+          : <GeometryPoint>[],
       trafficLevel: json['trafficLevel'],
-      plannedStartDate: json['plannedStartDate'] != null ? DateTime.parse(json['plannedStartDate']) : null,
-      plannedEndDate: json['plannedEndDate'] != null ? DateTime.parse(json['plannedEndDate']) : null,
-      ductDiameter: json['ductDiameter']?.toDouble(),
+      plannedStartDate: json['plannedStartDate'] != null && json['plannedStartDate'].toString().isNotEmpty
+          ? DateTime.tryParse(json['plannedStartDate'].toString())
+          : null,
+      plannedEndDate: json['plannedEndDate'] != null && json['plannedEndDate'].toString().isNotEmpty
+          ? DateTime.tryParse(json['plannedEndDate'].toString())
+          : null,
+      ductDiameter: (json['ductDiameter'] as num?)?.toDouble(),
       startAddress: json['startAddress'],
       endAddress: json['endAddress'],
-      customFields: json['customFields'] ?? const {},
+      customFields: json['customFields'] != null 
+          ? Map<String, dynamic>.from(json['customFields']) 
+          : <String, dynamic>{},
       startNvtId: json['startNvtId']?.toString(),
       endNvtId: json['endNvtId']?.toString(),
       connectedPopId: json['connectedPopId']?.toString(),
