@@ -5,6 +5,9 @@ import '../../widgets/interactive_map_view.dart';
 import '../../core/network/api_service.dart';
 import '../../models/planning/infrastructure_elements.dart';
 import '../../models/planning/segment.dart';
+import '../../models/planning/geometry_point.dart';
+import '../../models/planning/enums/work_type.dart';
+import '../../models/planning/enums/workflow_state.dart';
 
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
@@ -34,6 +37,11 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
   CameraPosition? _initialCamera;
+
+  bool isMapEditMode = false;
+  String? activeDrawTool;
+  LatLng? tempMarker;
+  Map<String, dynamic> newNodeData = {};
 
   @override
   void initState() {
@@ -117,19 +125,23 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       }
     }
 
+    if (tempMarker != null) {
+      markers.add(Marker(
+        markerId: const MarkerId('temp_marker'),
+        position: tempMarker!,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ));
+    }
+
     _markers = markers;
     _polylines = polylines;
 
-    if (_nvts.isNotEmpty && _nvts.first.latitude != null) {
-      _initialCamera = CameraPosition(
-        target: LatLng(_nvts.first.latitude!, _nvts.first.longitude!),
-        zoom: 14.0,
-      );
-    } else if (_segments.isNotEmpty && _segments.first.geometry.isNotEmpty) {
-      _initialCamera = CameraPosition(
-        target: LatLng(_segments.first.geometry.first.latitude, _segments.first.geometry.first.longitude),
-        zoom: 14.0,
-      );
+    if (_initialCamera == null) {
+      if (_nvts.isNotEmpty && _nvts.first.latitude != null) {
+        _initialCamera = CameraPosition(target: LatLng(_nvts.first.latitude!, _nvts.first.longitude!), zoom: 14.0);
+      } else if (_segments.isNotEmpty && _segments.first.geometry.isNotEmpty) {
+        _initialCamera = CameraPosition(target: LatLng(_segments.first.geometry.first.latitude, _segments.first.geometry.first.longitude), zoom: 14.0);
+      }
     }
   }
 
@@ -138,8 +150,207 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       case 'POP': return const Color(0xFF6938ef);
       case 'Netzverteiler': return const Color(0xFF2fb080);
       case 'Segments': return const Color(0xFFfbbf24);
+      case 'Acometidas': return const Color(0xFFf59e0b);
       default: return Colors.white;
     }
+  }
+
+  void _onMapTapped(LatLng position) {
+    if (isMapEditMode && activeDrawTool != null) {
+      setState(() {
+        tempMarker = position;
+        _buildMapObjects();
+      });
+      _showSaveNodeForm();
+    }
+  }
+
+  void _showSaveNodeForm() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1C1D21),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24, 
+            left: 24, 
+            right: 24, 
+            top: 24
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Save $activeDrawTool', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              TextField(
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Name / Identifier',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white10)),
+                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.greenAccent)),
+                ),
+                onChanged: (val) => newNodeData['name'] = val,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6938ef),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _saveNode();
+                },
+                child: const Text('SAVE ELEMENT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              )
+            ],
+          ),
+        );
+      }
+    );
+  }
+
+  Future<void> _saveNode() async {
+    if (tempMarker == null) return;
+    setState(() => _isLoading = true);
+    
+    try {
+      final api = ApiService();
+      if (activeDrawTool == 'POP') {
+        final newPop = Pop(
+          id: '',
+          clusterId: widget.clusterId,
+          name: newNodeData['name'] ?? 'New POP',
+          locationAddress: 'Lat: ${tempMarker!.latitude}, Lng: ${tempMarker!.longitude}',
+          maxCapacityPorts: 100,
+          nvts: [],
+        );
+        await api.post('/pops', newPop.toJson());
+      } else if (activeDrawTool == 'Netzverteiler') {
+        final newNvt = Netzverteiler(
+          id: '',
+          identifier: newNodeData['name'] ?? 'New NVT',
+          latitude: tempMarker!.latitude,
+          longitude: tempMarker!.longitude,
+          popId: _pops.isNotEmpty ? _pops.first.id : 'unknown',
+        );
+        await api.post('/netzverteilers', newNvt.toJson());
+      } else if (activeDrawTool == 'Segment' || activeDrawTool == 'Acometida') {
+        final newSeg = Segment(
+          id: '',
+          streetName: newNodeData['name'] ?? 'New Segment',
+          streetType: 'UNKNOWN',
+          workType: WorkType.trenching,
+          currentState: WorkflowState.plan,
+          length: 50,
+          geometry: [
+            GeometryPoint(latitude: tempMarker!.latitude, longitude: tempMarker!.longitude),
+            GeometryPoint(latitude: tempMarker!.latitude + 0.0005, longitude: tempMarker!.longitude + 0.0005),
+          ]
+        );
+        await api.post('/projects/${widget.projectId}/segments', newSeg.toJson());
+      }
+    } catch (e) {
+      print('Error saving node: $e');
+    }
+
+    setState(() {
+      isMapEditMode = false;
+      activeDrawTool = null;
+      tempMarker = null;
+      newNodeData = {};
+    });
+    
+    _loadClusterData();
+  }
+
+  Widget _buildMapArea() {
+    return Stack(
+      children: [
+        InteractiveMapView(
+          markers: _markers,
+          polylines: _polylines,
+          initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+          onTap: _onMapTapped,
+        ),
+        // Active Draw Tool indicator
+        if (isMapEditMode && activeDrawTool != null)
+          Positioned(
+            top: 40, left: 16, right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6938ef),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Tap on the map to place $activeDrawTool', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        isMapEditMode = false;
+                        activeDrawTool = null;
+                        tempMarker = null;
+                        _buildMapObjects();
+                      });
+                    },
+                    child: const Icon(Icons.close, color: Colors.white),
+                  )
+                ],
+              ),
+            ),
+          ),
+        // Overlay gradient for seamless transition
+        Positioned(
+          bottom: 0, left: 0, right: 0, height: 80,
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Color(0xFF131415)],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDataPanel({ScrollController? scrollController}) {
+    return Container(
+      decoration: const BoxDecoration(color: Color(0xFF131415)),
+      child: SingleChildScrollView(
+        controller: scrollController,
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildStatsGrid(),
+            const SizedBox(height: 24),
+            const Text(
+              'NETWORK NODES BREAKDOWN',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildAccordionList(),
+            const SizedBox(height: 80), // Padding for FAB
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -162,66 +373,126 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
         ),
         child: _isLoading 
           ? const Center(child: CircularProgressIndicator()) 
-          : Column(
-          children: [
-            // Map Area
-            Expanded(
-              flex: 4,
-              child: Stack(
-                children: [
-                  InteractiveMapView(
-                    markers: _markers,
-                    polylines: _polylines,
-                    initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
-                  ),
-                  // Overlay gradient for seamless transition
-                  Positioned(
-                    bottom: 0, left: 0, right: 0, height: 40,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Color(0xFF131415)],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Bottom Panel
-            Expanded(
-              flex: 6,
-              child: Container(
-                decoration: const BoxDecoration(color: Color(0xFF131415)),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth > 800) {
+                  // Tablet / Desktop view (Split horizontally)
+                  return Row(
                     children: [
-                      _buildStatsGrid(),
-                      const SizedBox(height: 24),
-                      const Text(
-                        'NETWORK NODES BREAKDOWN',
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                        ),
+                      Expanded(
+                        flex: 6,
+                        child: _buildMapArea(),
                       ),
-                      const SizedBox(height: 12),
-                      _buildAccordionList(),
+                      Container(
+                        width: 1,
+                        color: Colors.white.withOpacity(0.1),
+                      ),
+                      Expanded(
+                        flex: 4,
+                        child: _buildDataPanel(),
+                      ),
                     ],
-                  ),
-                ),
-              ),
+                  );
+                } else {
+                  // Phone view (Map on top, Draggable sheet for data)
+                  return Stack(
+                    children: [
+                      // Full screen map
+                      Positioned.fill(
+                        child: _buildMapArea(),
+                      ),
+                      // Draggable bottom sheet
+                      DraggableScrollableSheet(
+                        initialChildSize: 0.45,
+                        minChildSize: 0.15,
+                        maxChildSize: 0.9,
+                        builder: (context, scrollController) {
+                          return Container(
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF131415),
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black54,
+                                  blurRadius: 10,
+                                  offset: Offset(0, -5),
+                                )
+                              ],
+                            ),
+                            child: Column(
+                              children: [
+                                // Drag handle
+                                Center(
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(vertical: 12),
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white30,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _buildDataPanel(scrollController: scrollController),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  );
+                }
+              },
             ),
-          ],
-        ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddNodeBottomSheet,
+        backgroundColor: const Color(0xFF6938ef),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Add Node', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  void _showAddNodeBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1D21),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Add Network Element', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                _buildAddListTile(Icons.router, Colors.purpleAccent, 'Add POP', 'POP'),
+                _buildAddListTile(Icons.settings_input_component, Colors.orangeAccent, 'Add Netzverteiler', 'Netzverteiler'),
+                _buildAddListTile(Icons.linear_scale, Colors.greenAccent, 'Add Segment', 'Segment'),
+                _buildAddListTile(Icons.home, Colors.blueAccent, 'Add Acometida', 'Acometida'),
+              ],
+            ),
+          ),
+        );
+      }
+    );
+  }
+
+  Widget _buildAddListTile(IconData icon, Color color, String title, String type) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      onTap: () {
+        Navigator.pop(context);
+        setState(() {
+          isMapEditMode = true;
+          activeDrawTool = type;
+        });
+      },
     );
   }
 

@@ -5,6 +5,8 @@ class InteractiveMapView extends StatelessWidget {
   final Set<Marker> markers;
   final Set<Polyline> polylines;
   final CameraPosition initialCameraPosition;
+  final void Function(GoogleMapController)? onMapCreated;
+  final void Function(LatLng)? onTap;
 
   const InteractiveMapView({
     Key? key,
@@ -14,6 +16,8 @@ class InteractiveMapView extends StatelessWidget {
       target: LatLng(52.5200, 13.4050), // Default Berlin
       zoom: 12.0,
     ),
+    this.onMapCreated,
+    this.onTap,
   }) : super(key: key);
 
   @override
@@ -21,18 +25,18 @@ class InteractiveMapView extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        height: 300, // Or whatever parent passes down if Expanded is used, 
-        // wait, if it's inside Expanded, the parent might constrain it, but we can rely on constraints.
-        // Actually, the parent in ClusterArea uses Expanded(child: InteractiveMapView()), so it will stretch.
+        height: double.infinity, // Let parent handle height instead of fixed 300
         width: double.infinity,
         decoration: BoxDecoration(
           color: const Color(0xFF131415),
           border: Border.all(color: const Color(0xFF2D2E33)),
         ),
         child: GoogleMap(
+          onMapCreated: onMapCreated,
           initialCameraPosition: initialCameraPosition,
           markers: markers,
           polylines: polylines,
+          onTap: onTap,
           myLocationEnabled: false,
           mapType: MapType.hybrid, // Hybrid works well for dark themes in construction
           compassEnabled: false,
@@ -43,3 +47,4 @@ class InteractiveMapView extends StatelessWidget {
     );
   }
 }
+
