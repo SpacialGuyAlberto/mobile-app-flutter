@@ -374,7 +374,9 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
                     Expanded(
                       flex: 2,
                       child: OutlinedButton(
-                        onPressed: () {},
+                        onPressed: () {
+                          context.push('/project_clusters/${p.id}');
+                        },
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: Colors.white10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

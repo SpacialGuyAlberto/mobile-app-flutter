@@ -9,15 +9,15 @@ class GeometryPoint {
 
   factory GeometryPoint.fromJson(Map<String, dynamic> json) {
     return GeometryPoint(
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
+      latitude: (json['lat'] ?? json['latitude'] ?? 0.0).toDouble(),
+      longitude: (json['lng'] ?? json['longitude'] ?? 0.0).toDouble(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'latitude': latitude,
-      'longitude': longitude,
+      'lat': latitude,
+      'lng': longitude,
     };
   }
 }

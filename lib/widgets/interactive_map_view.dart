@@ -41,7 +41,7 @@ class InteractiveMapView extends StatelessWidget {
           mapType: MapType.hybrid, // Hybrid works well for dark themes in construction
           compassEnabled: false,
           mapToolbarEnabled: false,
-          zoomControlsEnabled: false,
+          zoomControlsEnabled: true,
         ),
       ),
     );

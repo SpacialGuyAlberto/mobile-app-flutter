@@ -20,6 +20,7 @@ class Segment {
   final double? startLongitude;
   final double? endLatitude;
   final double? endLongitude;
+  final double? elevation;
   final List<GeometryPoint> geometry;
   final String? trafficLevel;
   final DateTime? plannedStartDate;
@@ -47,6 +48,7 @@ class Segment {
     this.startLongitude,
     this.endLatitude,
     this.endLongitude,
+    this.elevation,
     this.geometry = const [],
     this.trafficLevel,
     this.plannedStartDate,
@@ -81,6 +83,7 @@ class Segment {
       startLongitude: json['startLongitude']?.toDouble(),
       endLatitude: json['endLatitude']?.toDouble(),
       endLongitude: json['endLongitude']?.toDouble(),
+      elevation: json['elevation']?.toDouble(),
       geometry: json['geometry'] != null
           ? (json['geometry'] as List).map((e) => GeometryPoint.fromJson(e)).toList()
           : const [],
@@ -110,6 +113,7 @@ class Segment {
       'startLongitude': startLongitude,
       'endLatitude': endLatitude,
       'endLongitude': endLongitude,
+      'elevation': elevation,
       'geometry': geometry.map((e) => e.toJson()).toList(),
       'trafficLevel': trafficLevel,
       'plannedStartDate': plannedStartDate?.toIso8601String(),

@@ -40,6 +40,9 @@ class Pop {
   final String locationAddress;
   final int? maxCapacityPorts;
   final String? clusterId;
+  final double? latitude;
+  final double? longitude;
+  final double? elevation;
   final List<Netzverteiler> nvts;
 
   const Pop({
@@ -48,6 +51,9 @@ class Pop {
     required this.locationAddress,
     this.maxCapacityPorts,
     this.clusterId,
+    this.latitude,
+    this.longitude,
+    this.elevation,
     this.nvts = const [],
   });
 
@@ -58,6 +64,9 @@ class Pop {
       locationAddress: json['locationAddress'],
       maxCapacityPorts: json['maxCapacityPorts'],
       clusterId: json['clusterId']?.toString() ?? json['cluster']?['id']?.toString(),
+      latitude: json['latitude']?.toDouble(),
+      longitude: json['longitude']?.toDouble(),
+      elevation: json['elevation']?.toDouble(),
       nvts: json['nvts'] != null 
           ? (json['nvts'] as List).map((e) => Netzverteiler.fromJson(e)).toList() 
           : const [],
@@ -71,6 +80,9 @@ class Pop {
       'locationAddress': locationAddress,
       'maxCapacityPorts': maxCapacityPorts,
       'clusterId': clusterId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'elevation': elevation,
       'nvts': nvts.map((e) => e.toJson()).toList(),
     };
   }
@@ -81,6 +93,7 @@ class Netzverteiler {
   final String identifier;
   final double? latitude;
   final double? longitude;
+  final double? elevation;
   final String? popId;
 
   const Netzverteiler({
@@ -88,6 +101,7 @@ class Netzverteiler {
     required this.identifier,
     this.latitude,
     this.longitude,
+    this.elevation,
     this.popId,
   });
 
@@ -97,6 +111,7 @@ class Netzverteiler {
       identifier: json['identifier'],
       latitude: json['latitude']?.toDouble(),
       longitude: json['longitude']?.toDouble(),
+      elevation: json['elevation']?.toDouble(),
       popId: json['popId']?.toString() ?? json['pop']?['id']?.toString(),
     );
   }
@@ -107,6 +122,7 @@ class Netzverteiler {
       'identifier': identifier,
       'latitude': latitude,
       'longitude': longitude,
+      'elevation': elevation,
       'popId': popId,
     };
   }

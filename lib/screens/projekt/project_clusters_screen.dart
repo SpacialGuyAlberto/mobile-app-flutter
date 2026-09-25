@@ -1,233 +1,228 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../widgets/glass_card.dart';
 
-class ProjectClustersScreen extends StatelessWidget {
+class ProjectClustersScreen extends StatefulWidget {
   final String projectId;
   const ProjectClustersScreen({Key? key, required this.projectId}) : super(key: key);
 
   @override
+  State<ProjectClustersScreen> createState() => _ProjectClustersScreenState();
+}
+
+class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
+  int _selectedTabIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
-    // Mocked data mirroring the web-dashboard implementation
+    // Mocked data mirroring the user's screenshot
     final List<Map<String, dynamic>> clusters = [
       {
-        'id': 1,
-        'projectId': projectId,
-        'name': 'Cluster Mitte',
-        'cityArea': 'Berlin Mitte',
-        'popCount': 2,
-        'netzverteilerCount': 15,
-        'status': 'IN_PROGRESS'
-      },
-      {
-        'id': 2,
-        'projectId': projectId,
-        'name': 'Cluster Kreuzberg',
-        'cityArea': 'Friedrichshain-Kreuzberg',
-        'popCount': 1,
-        'netzverteilerCount': 8,
-        'status': 'PLANNED'
+        'id': '2',
+        'projectId': widget.projectId,
+        'name': 'CLUSTER SÜD',
+        'description': 'HIER GEHT UM DSA OST CLUSTER',
+        'popCount': 3,
+        'netzverteilerCount': 2,
       }
     ];
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: const Color(0xFF131415),
       appBar: AppBar(
-        title: const Text('Project Clusters', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF131415), Color(0xFF1C1D21)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Colors.white70),
+          onPressed: () {},
         ),
-        child: SafeArea(
-          child: clusters.isEmpty
-              ? _buildEmptyState(context)
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: clusters.length,
-                  itemBuilder: (context, index) {
-                    final cluster = clusters[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: GestureDetector(
-                        onTap: () {
-                          context.push('/project_clusters/$projectId/areas/${cluster['id']}');
-                        },
-                        child: GlassCard(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Text('🏢', style: TextStyle(fontSize: 16)),
-                                            const SizedBox(width: 8),
-                                            Flexible(
-                                              child: Text(
-                                                cluster['name'],
-                                                style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(0.05),
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: Colors.white.withOpacity(0.1)),
-                                          ),
-                                          child: Text(
-                                            cluster['cityArea'],
-                                            style: const TextStyle(color: Colors.white70, fontSize: 10),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      _buildStatusBadge(cluster['status']),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'ID: ${cluster['id']}',
-                                        style: const TextStyle(color: Colors.white30, fontSize: 10, fontFamily: 'monospace'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: [
-                                  _buildInfoItem('POPs', cluster['popCount'].toString()),
-                                  _buildInfoItem('Netzverteiler', cluster['netzverteilerCount'].toString()),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+        title: const Text(
+          'QUARKBAU / MANAGEMENT SYSTEM', 
+          style: TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)
+        ),
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () => context.pop(),
+              child: const Row(
+                children: [
+                  Icon(Icons.arrow_back, color: Colors.white54, size: 14),
+                  SizedBox(width: 8),
+                  Text('BACK TO PROJECTS', style: TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Fürth Dambach\nDeployment',
+              style: TextStyle(color: Colors.white, fontSize: 42, fontFamily: 'serif', height: 1.0, letterSpacing: -0.5),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Manage project areas, fiber optic deployment segments,\nand materials',
+              style: TextStyle(color: Color(0xFF8A8F98), fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 48),
+            
+            // Tabs
+            Row(
+              children: [
+                _buildTab('CLUSTERS', 0),
+                const SizedBox(width: 24),
+                _buildTab('SEGMENTS', 1),
+                const SizedBox(width: 24),
+                _buildTab('PROJECT MATERIALS', 2),
+              ],
+            ),
+            const SizedBox(height: 32),
+            
+            // Action Bar
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6938ef),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: const Icon(Icons.add, color: Colors.white, size: 16),
+                  label: const Text('NEW CLUSTER', style: TextStyle(color: Colors.white, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
                 ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            // Clusters List
+            ...clusters.map((cluster) => _buildClusterCard(cluster)).toList(),
+          ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // Future: open create modal/screen
-        },
-        backgroundColor: const Color(0xFF6938ef),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('New Cluster', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget _buildInfoItem(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: const TextStyle(
-            color: Colors.white30,
-            fontSize: 9,
+  Widget _buildTab(String title, int index) {
+    final isSelected = _selectedTabIndex == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTabIndex = index;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white30,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
             letterSpacing: 1.5,
-            fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildStatusBadge(String status) {
-    Color bgColor;
-    Color textColor;
-    
-    switch (status) {
-      case 'IN_PROGRESS':
-        bgColor = Colors.orangeAccent.withOpacity(0.1);
-        textColor = Colors.orangeAccent;
-        break;
-      case 'COMPLETED':
-        bgColor = const Color(0xFF2fb080).withOpacity(0.1);
-        textColor = const Color(0xFF2fb080);
-        break;
-      case 'PLANNED':
-      default:
-        bgColor = Colors.white.withOpacity(0.05);
-        textColor = Colors.white54;
-        break;
-    }
-
+  Widget _buildClusterCard(Map<String, dynamic> cluster) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: textColor.withOpacity(0.2)),
+        color: const Color(0xFF1C1D21),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Text(
-        status.replaceAll('_', ' '),
-        style: TextStyle(
-          color: textColor,
-          fontSize: 9,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.inbox, size: 64, color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 16),
-          const Text(
-            'No clusters found',
-            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.business, color: Colors.white54, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    cluster['name'],
+                    style: const TextStyle(color: Colors.white, fontSize: 16, letterSpacing: 2, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFF6938ef).withOpacity(0.5)),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'ID: ${cluster['id']}',
+                  style: const TextStyle(color: Color(0xFF6938ef), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Create your first project cluster to get started',
-            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              cluster['description'],
+              style: const TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 32),
+          const Divider(color: Colors.white10, height: 1),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStat('POPS', cluster['popCount'].toString()),
+              _buildStat('NETZVERTEILER', cluster['netzverteilerCount'].toString()),
+              const SizedBox(width: 32), // Spacer
+            ],
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                context.push('/project_clusters/${widget.projectId}/areas/${cluster['id']}');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white.withOpacity(0.05),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              child: const Text('MANAGE AREAS', style: TextStyle(fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStat(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontFamily: 'serif')),
+      ],
     );
   }
 }
