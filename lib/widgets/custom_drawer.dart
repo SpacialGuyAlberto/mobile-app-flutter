@@ -110,7 +110,16 @@ class CustomDrawer extends ConsumerWidget {
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
-                children: menuItems,
+                children: [
+                  ...menuItems,
+                  const Divider(color: Color(0xFF2D2E33)),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                    child: Text('Integration', style: TextStyle(color: Color(0xFF8A8F98), fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                  _buildDrawerItem(context, Icons.cloud_download_outlined, 'Download for Offline', '/offline_sync'),
+                  _buildDrawerItem(context, Icons.sensors, 'AR Companion Mode', '/ar_companion'),
+                ],
               ),
             ),
             const Divider(color: AppTheme.borderLight, height: 1),

@@ -21,6 +21,8 @@ import '../screens/projekt/cluster_area_dashboard_screen.dart';
 import '../screens/bauleiter/field_crews_screen.dart';
 import '../screens/bauleiter/inventory_screen.dart';
 import '../screens/bauleiter/bauleiter_map_screen.dart';
+import '../screens/dashboard/ar_companion_screen.dart';
+import '../screens/dashboard/offline_sync_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -156,6 +158,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               final segmentId = state.pathParameters['segmentId'] ?? 'unknown';
               return EvidenceCaptureScreen(segmentId: segmentId);
             },
+          ),
+          GoRoute(
+            path: '/ar_companion',
+            builder: (context, state) => const ARCompanionScreen(),
+          ),
+          GoRoute(
+            path: '/offline_sync',
+            builder: (context, state) => const OfflineSyncScreen(),
           ),
         ],
       ),
