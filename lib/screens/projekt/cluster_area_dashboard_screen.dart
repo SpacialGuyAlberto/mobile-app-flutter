@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:go_router/go_router.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/interactive_map_view.dart';
 import '../../core/network/api_service.dart';
@@ -710,10 +711,47 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
               children: [
                 const Text('Add Network Element', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
-                _buildAddListTile(Icons.router, Colors.purpleAccent, 'Add POP', 'POP'),
-                _buildAddListTile(Icons.settings_input_component, Colors.orangeAccent, 'Add Netzverteiler', 'Netzverteiler'),
-                _buildAddListTile(Icons.linear_scale, Colors.greenAccent, 'Add Segment', 'Segment'),
-                _buildAddListTile(Icons.home, Colors.blueAccent, 'Add Acometida', 'Acometida'),
+                _buildAddListTile(Icons.router, Colors.purpleAccent, 'Add POP', () {
+                  Navigator.pop(context);
+                  setState(() {
+                    isMapEditMode = true;
+                    activeDrawTool = 'POP';
+                  });
+                }),
+                _buildAddListTile(Icons.settings_input_component, Colors.orangeAccent, 'Add Netzverteiler', () {
+                  Navigator.pop(context);
+                  setState(() {
+                    isMapEditMode = true;
+                    activeDrawTool = 'Netzverteiler';
+                  });
+                }),
+                _buildAddListTile(Icons.linear_scale, Colors.greenAccent, 'Add Segment', () async {
+                  Navigator.pop(context);
+                  double? lat, lng, zoom;
+                  if (_mapController != null) {
+                    try {
+                      final bounds = await _mapController!.getVisibleRegion();
+                      lat = (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
+                      lng = (bounds.northeast.longitude + bounds.southwest.longitude) / 2;
+                      zoom = await _mapController!.getZoomLevel();
+                    } catch (e) {
+                      print('Error getting map center: $e');
+                    }
+                  }
+                  String route = '/create_segment/${widget.projectId}';
+                  if (lat != null && lng != null && zoom != null) {
+                    route += '?lat=$lat&lng=$lng&zoom=$zoom';
+                  }
+                  // Navigate to the custom vector drawing screen for segments
+                  context.push(route);
+                }),
+                _buildAddListTile(Icons.home, Colors.blueAccent, 'Add Acometida', () {
+                  Navigator.pop(context);
+                  setState(() {
+                    isMapEditMode = true;
+                    activeDrawTool = 'Acometida';
+                  });
+                }),
               ],
             ),
           ),
@@ -722,17 +760,11 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
     );
   }
 
-  Widget _buildAddListTile(IconData icon, Color color, String title, String type) {
+  Widget _buildAddListTile(IconData icon, Color color, String title, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon, color: color),
       title: Text(title, style: const TextStyle(color: Colors.white)),
-      onTap: () {
-        Navigator.pop(context);
-        setState(() {
-          isMapEditMode = true;
-          activeDrawTool = type;
-        });
-      },
+      onTap: onTap,
     );
   }
 

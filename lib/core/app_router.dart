@@ -138,11 +138,21 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/create_segment',
-            builder: (context, state) => const CreateSegmentScreen(),
+            builder: (context, state) => const CreateSegmentScreen(projectId: null),
           ),
           GoRoute(
             path: '/create_segment/:projectId',
-            builder: (context, state) => const CreateSegmentScreen(),
+            builder: (context, state) {
+              final lat = state.uri.queryParameters['lat'];
+              final lng = state.uri.queryParameters['lng'];
+              final zoom = state.uri.queryParameters['zoom'];
+              return CreateSegmentScreen(
+                projectId: state.pathParameters['projectId'],
+                initialLat: lat != null ? double.tryParse(lat) : null,
+                initialLng: lng != null ? double.tryParse(lng) : null,
+                initialZoom: zoom != null ? double.tryParse(zoom) : null,
+              );
+            },
           ),
           GoRoute(
             path: '/work_logs',
