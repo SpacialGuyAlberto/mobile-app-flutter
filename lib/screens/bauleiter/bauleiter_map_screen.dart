@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import '../../widgets/glass_card.dart';
+import '../../widgets/segment_edit_bottom_sheet.dart';
 
 class BauleiterMapScreen extends StatefulWidget {
   const BauleiterMapScreen({Key? key}) : super(key: key);
@@ -63,6 +64,20 @@ class _BauleiterMapScreenState extends State<BauleiterMapScreen> {
               points: points,
               color: Colors.blueAccent,
               width: 5,
+              consumeTapEvents: true,
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (ctx) => SegmentEditBottomSheet(
+                    segment: segment,
+                    onSaved: () {
+                      // Optionally refresh or sync data
+                    },
+                  ),
+                );
+              },
             ));
           }
         });

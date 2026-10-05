@@ -69,14 +69,17 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
             const SizedBox(height: 48),
             
             // Tabs
-            Row(
-              children: [
-                _buildTab('CLUSTERS', 0),
-                const SizedBox(width: 24),
-                _buildTab('SEGMENTS', 1),
-                const SizedBox(width: 24),
-                _buildTab('PROJECT MATERIALS', 2),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildTab('CLUSTERS', 0),
+                  const SizedBox(width: 24),
+                  _buildTab('SEGMENTS', 1),
+                  const SizedBox(width: 24),
+                  _buildTab('PROJECT MATERIALS', 2),
+                ],
+              ),
             ),
             const SizedBox(height: 32),
             

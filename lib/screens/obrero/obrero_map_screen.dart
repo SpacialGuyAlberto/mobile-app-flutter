@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
 import '../../widgets/glass_card.dart';
+import '../../widgets/segment_edit_bottom_sheet.dart';
 
 class ObreroMapScreen extends StatefulWidget {
   const ObreroMapScreen({Key? key}) : super(key: key);
@@ -54,7 +55,22 @@ class _ObreroMapScreenState extends State<ObreroMapScreen> {
               points: points,
               color: Colors.orangeAccent,
               width: 5,
+              consumeTapEvents: true,
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (ctx) => SegmentEditBottomSheet(
+                    segment: segment,
+                    onSaved: () {
+                      _fetchAssignedSegments();
+                    },
+                  ),
+                );
+              },
             ));
+
             
             // Add a marker for the start of the segment
             if (points.isNotEmpty) {
@@ -85,15 +101,32 @@ class _ObreroMapScreenState extends State<ObreroMapScreen> {
 
   void _loadDummySegments() {
     setState(() {
-      _polylines.add(const Polyline(
-        polylineId: PolylineId('dummy_segment'),
-        points: [
+      _polylines.add(Polyline(
+        polylineId: const PolylineId('dummy_segment'),
+        points: const [
           LatLng(52.5200, 13.4050),
           LatLng(52.5210, 13.4060),
           LatLng(52.5220, 13.4055),
         ],
         color: Colors.orangeAccent,
         width: 5,
+        consumeTapEvents: true,
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (ctx) => SegmentEditBottomSheet(
+              segment: const {
+                'id': 'dummy',
+                'currentState': 'PLAN',
+                'assignedCrewId': 1,
+                'ductDiameter': 0.05,
+              },
+              onSaved: () {},
+            ),
+          );
+        },
       ));
       _markers.add(
         Marker(

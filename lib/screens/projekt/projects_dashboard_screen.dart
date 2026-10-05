@@ -99,20 +99,11 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF131415), 
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white70),
-          onPressed: () {},
-        ),
-        title: const Text('QUARKBAU / MANAGEMENT SYSTEM', style: TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
-        centerTitle: true,
-      ),
-      body: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
-          : SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+      body: SafeArea(
+        child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -129,6 +120,7 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -137,20 +129,23 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'COMMAND\nCENTER',
-              style: TextStyle(color: Colors.white, fontSize: 42, fontFamily: 'serif', height: 1.0, letterSpacing: -0.5),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Real-time construction\noversight',
-              style: TextStyle(color: Color(0xFF8A8F98), fontSize: 14, height: 1.4),
-            ),
-          ],
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'COMMAND\nCENTER',
+                style: TextStyle(color: Colors.white, fontSize: 42, fontFamily: 'serif', height: 1.0, letterSpacing: -0.5),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'Real-time construction\noversight',
+                style: TextStyle(color: Color(0xFF8A8F98), fontSize: 14, height: 1.4),
+              ),
+            ],
+          ),
         ),
+        const SizedBox(width: 16),
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -344,7 +339,10 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(p.name.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Text(p.name.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(

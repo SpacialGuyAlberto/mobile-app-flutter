@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import '../../widgets/glass_card.dart';
@@ -60,6 +61,15 @@ class _SegmentEvidenceScreenState extends State<SegmentEvidenceScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_road),
+            tooltip: 'Edit Fencing Plan',
+            onPressed: () {
+              context.push('/edit_fencing_plan/${widget.segmentId}');
+            },
+          ),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(

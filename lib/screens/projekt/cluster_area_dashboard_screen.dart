@@ -14,6 +14,7 @@ import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import '../../widgets/segment_edit_bottom_sheet.dart';
 
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
@@ -947,7 +948,21 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {},
+          onTap: () {
+            if (element is Segment) {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (ctx) => SegmentEditBottomSheet(
+                  segment: element.toJson(),
+                  onSaved: () {
+                    _loadClusterData();
+                  },
+                ),
+              );
+            }
+          },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
             child: Row(

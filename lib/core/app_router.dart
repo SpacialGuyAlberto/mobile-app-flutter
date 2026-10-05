@@ -23,6 +23,7 @@ import '../screens/bauleiter/inventory_screen.dart';
 import '../screens/bauleiter/bauleiter_map_screen.dart';
 import '../screens/dashboard/ar_companion_screen.dart';
 import '../screens/dashboard/offline_sync_screen.dart';
+import '../screens/projekt/fencing_plan_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -118,6 +119,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) {
               final segmentId = state.pathParameters['segmentId']!;
               return SegmentEvidenceScreen(segmentId: segmentId);
+            },
+          ),
+          GoRoute(
+            path: '/edit_fencing_plan/:segmentId',
+            builder: (context, state) {
+              final segmentId = int.tryParse(state.pathParameters['segmentId']!) ?? 0;
+              return FencingPlanScreen(segmentId: segmentId);
             },
           ),
           GoRoute(
