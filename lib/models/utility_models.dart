@@ -18,6 +18,44 @@ abstract class UtilityLine {
     this.hazardLevel,
     this.status,
   });
+
+  static UtilityLine fromJson(Map<String, dynamic> json) {
+    String type = json['utilityType'] ?? 'WATER';
+    List<dynamic> geom = json['geometry'] ?? [];
+    double? d = json['depth'] != null ? (json['depth'] as num).toDouble() : null;
+
+    if (type == 'ELECTRICITY') {
+      return ElectricityCable(
+        id: json['id'],
+        geometry: geom,
+        depth: d,
+        operatorName: json['operatorName'],
+        contactPhone: json['contactPhone'],
+        hazardLevel: json['hazardLevel'],
+        status: json['status'],
+      );
+    } else if (type == 'GAS') {
+      return GasPipe(
+        id: json['id'],
+        geometry: geom,
+        depth: d,
+        operatorName: json['operatorName'],
+        contactPhone: json['contactPhone'],
+        hazardLevel: json['hazardLevel'],
+        status: json['status'],
+      );
+    } else {
+      return WaterPipe(
+        id: json['id'],
+        geometry: geom,
+        depth: d,
+        operatorName: json['operatorName'],
+        contactPhone: json['contactPhone'],
+        hazardLevel: json['hazardLevel'],
+        status: json['status'],
+      );
+    }
+  }
 }
 
 class WaterPipe extends UtilityLine {

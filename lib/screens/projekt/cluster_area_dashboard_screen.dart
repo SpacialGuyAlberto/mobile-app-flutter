@@ -10,6 +10,7 @@ import '../../models/planning/segment.dart';
 import '../../models/planning/geometry_point.dart';
 import '../../models/planning/enums/work_type.dart';
 import '../../models/planning/enums/workflow_state.dart';
+import '../../models/utility_models.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -19,6 +20,8 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/segment_edit_bottom_sheet.dart';
 import '../bauleiter/crew_detail_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/ar_companion_provider.dart';
 
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
@@ -40,6 +43,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   List<Pop> _pops = [];
   List<Netzverteiler> _nvts = [];
   List<Segment> _segments = [];
+  List<UtilityLine> _utilities = [];
 
   Map<String, List<dynamic>> groupedElements = {};
   Map<String, int> stats = {'POP': 0, 'Netzverteiler': 0, 'Segments': 0};
@@ -205,16 +209,26 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       print('Error loading segments: $e');
     }
 
+    try {
+      final utilsData = await api.get('/v1/utilities');
+      final allUtils = (utilsData as List).map((e) => UtilityLine.fromJson(e)).toList();
+      _utilities = allUtils;
+    } catch (e) {
+      print('Error loading utilities: $e');
+    }
+
     setState(() {
       groupedElements = {
         'POP': _pops,
         'Netzverteiler': _nvts,
         'Segments': _segments,
+        'Utilities': _utilities,
       };
       stats = {
         'POP': _pops.length,
         'Netzverteiler': _nvts.length,
         'Segments': _segments.length,
+        'Utilities': _utilities.length,
       };
       _isLoading = false;
       _buildMapObjects();
@@ -272,6 +286,39 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           consumeTapEvents: true,
           onTap: () => _onSegmentTapped(seg),
         ));
+      }
+    }
+    for (var util in _utilities) {
+      if (util.geometry.isNotEmpty) {
+        try {
+          final points = util.geometry.map((g) {
+            double lat = (g['lat'] ?? g['latitude'] as num).toDouble();
+            double lng = (g['lng'] ?? g['longitude'] as num).toDouble();
+            return LatLng(lat, lng);
+          }).toList();
+          
+          Color utilColor = Colors.grey;
+          if (util is WaterPipe) utilColor = Colors.blueAccent;
+          else if (util is GasPipe) utilColor = Colors.yellowAccent;
+          else if (util is ElectricityCable) utilColor = Colors.redAccent;
+
+          polylines.add(Polyline(
+            polylineId: PolylineId('util_${util.utilityType}_${util.id}'),
+            points: points,
+            color: utilColor,
+            width: 4,
+            patterns: [PatternItem.dash(20), PatternItem.gap(10)], // Líneas punteadas
+            zIndex: 0,
+          ));
+        } catch (e) {
+          print('Error drawing utility polyline: $e');
+        }
+      }
+    }
+
+    for (var seg in _segments) {
+      if (seg.geometry.isNotEmpty) {
+        final points = seg.geometry.map((g) => LatLng(g.latitude, g.longitude)).toList();
 
         // Display Crew Marker if crew is assigned or in progress
         if (seg.assignedCrewId != null || seg.currentState.toString().toUpperCase().contains('INPROGRESS')) {
@@ -767,6 +814,34 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           right: 16,
           child: Column(
             children: [
+              Consumer(
+                builder: (context, ref, child) {
+                  final arState = ref.watch(arCompanionProvider);
+                  return FloatingActionButton(
+                    heroTag: 'arCompanionBtn',
+                    mini: true,
+                    backgroundColor: arState.isBroadcasting ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
+                    onPressed: () {
+                      final notifier = ref.read(arCompanionProvider.notifier);
+                      // Asignar el ID de proyecto actual (parseado a int)
+                      int? projId = int.tryParse(widget.projectId);
+                      if (projId != null) notifier.setProjectId(projId);
+                      
+                      if (arState.isBroadcasting) {
+                        notifier.stopBroadcasting();
+                      } else {
+                        notifier.startBroadcasting(arState.targetIp, arState.targetPort);
+                      }
+                    },
+                    child: Icon(
+                      arState.isBroadcasting ? Icons.cast_connected : Icons.cast, 
+                      color: arState.isBroadcasting ? Colors.white : Colors.blueAccent, 
+                      size: 20
+                    ),
+                  );
+                }
+              ),
+              const SizedBox(height: 12),
               FloatingActionButton(
                 heroTag: 'zoomInBtn',
                 mini: true,
