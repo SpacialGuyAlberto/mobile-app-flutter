@@ -8,14 +8,18 @@ import '../../widgets/interactive_map_view.dart';
 import '../../core/network/api_service.dart';
 import '../../models/planning/project.dart';
 
-class ProjectsDashboardScreen extends StatefulWidget {
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../providers/ar_companion_provider.dart';
+
+class ProjectsDashboardScreen extends ConsumerStatefulWidget {
   const ProjectsDashboardScreen({Key? key}) : super(key: key);
 
   @override
-  State<ProjectsDashboardScreen> createState() => _ProjectsDashboardScreenState();
+  ConsumerState<ProjectsDashboardScreen> createState() => _ProjectsDashboardScreenState();
 }
 
-class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
+class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScreen> {
   String selectedProject = 'All Projects';
   bool _isLoading = true;
   List<Project> _projects = [];
@@ -62,17 +66,90 @@ class _ProjectsDashboardScreenState extends State<ProjectsDashboardScreen> {
   }
 
   void _onProjectSelected(String projectName) async {
-    setState(() {
-      selectedProject = projectName;
-    });
-
     if (projectName == 'All Projects') {
+      setState(() {
+        selectedProject = projectName;
+      });
       _loadProjects();
       return;
     }
 
     final project = _projects.firstWhere((p) => p.name == projectName);
     
+    if (project.geometry.isNotEmpty) {
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 5),
+        );
+        
+        final double distanceInMeters = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          project.geometry.first.latitude,
+          project.geometry.first.longitude,
+        );
+
+        if (distanceInMeters > 50000) { // e.g. 50 km
+          final distanceKm = (distanceInMeters / 1000).toStringAsFixed(1);
+          final bool? confirm = await showDialog<bool>(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                backgroundColor: const Color(0xFF1C1D21),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+                    SizedBox(width: 8),
+                    Text('Advertencia de Incongruencia', style: TextStyle(color: Colors.orangeAccent, fontSize: 18)),
+                  ],
+                ),
+                content: Text(
+                  '¿Estás seguro que quieres renderizar el proyecto ${project.name} que se encuentra a $distanceKm km de distancia?\n\nHabrá incongruencia gráfica entre la infraestructura renderizada y tu entorno real.',
+                  style: const TextStyle(color: Colors.white70, height: 1.5),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancelar', style: TextStyle(color: Colors.white54)),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orangeAccent,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Renderizar', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              );
+            },
+          );
+
+          if (confirm != true) {
+            return; // El usuario canceló
+          }
+        }
+      } catch (e) {
+        print('Could not get location for distance validation: $e');
+      }
+    }
+
+    _applyProjectSelection(project);
+  }
+
+  void _applyProjectSelection(Project project) {
+    setState(() {
+      selectedProject = project.name;
+    });
+
+    final projId = int.tryParse(project.id);
+    if (projId != null) {
+      ref.read(arCompanionProvider.notifier).setProjectId(projId);
+    }
+
     if (project.geometry.isNotEmpty && _mapController != null) {
       _mapController!.animateCamera(
         CameraUpdate.newLatLngZoom(

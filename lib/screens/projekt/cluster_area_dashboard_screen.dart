@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../inventory/machinery_list_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../widgets/glass_card.dart';
@@ -10,11 +11,14 @@ import '../../models/planning/geometry_point.dart';
 import '../../models/planning/enums/work_type.dart';
 import '../../models/planning/enums/workflow_state.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/segment_edit_bottom_sheet.dart';
+import '../bauleiter/crew_detail_screen.dart';
 
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
@@ -56,17 +60,77 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
 
   BitmapDescriptor? _popIcon;
   BitmapDescriptor? _nvtIcon;
+  BitmapDescriptor? _crewIcon;
+  String? _selectedSegmentId;
+
+  bool _isOffline = false;
+  File? _offlineMapFile;
+  bool _isDownloading = false;
 
   @override
   void initState() {
     super.initState();
+    _checkOfflineStatus();
     _initCustomIcons();
     _loadClusterData();
+  }
+
+  Future<void> _checkOfflineStatus() async {
+    bool offline = false;
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        offline = true;
+      }
+    } on SocketException catch (_) {
+      offline = true;
+    }
+
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/cluster_map_${widget.clusterId}.png');
+    
+    setState(() {
+      _isOffline = offline;
+      if (file.existsSync()) {
+        _offlineMapFile = file;
+      }
+    });
+  }
+
+  Future<void> _downloadOfflineMap() async {
+    if (_mapController == null) return;
+    setState(() => _isDownloading = true);
+    
+    try {
+      final Uint8List? snapshot = await _mapController!.takeSnapshot();
+      if (snapshot != null) {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/cluster_map_${widget.clusterId}.png');
+        await file.writeAsBytes(snapshot);
+        setState(() {
+          _offlineMapFile = file;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Mapa guardado para uso offline exitosamente.'), backgroundColor: Colors.green),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al guardar el mapa.'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      setState(() => _isDownloading = false);
+    }
   }
 
   Future<void> _initCustomIcons() async {
     _popIcon = await _createCustomMarker(Icons.business, const Color(0xFF6938ef), 'POP');
     _nvtIcon = await _createCustomMarker(Icons.dns, const Color(0xFF2fb080), 'NVT');
+    _crewIcon = await _createCustomMarker(Icons.engineering, Colors.orange, 'CREW');
     if (mounted && !_isLoading) {
       setState(() {
         _buildMapObjects();
@@ -194,6 +258,8 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           color: const Color(0xFF131415), // Very dark border
           width: 10,
           zIndex: 1,
+          consumeTapEvents: true,
+          onTap: () => _onSegmentTapped(seg),
         ));
         
         // Inner bright core
@@ -203,7 +269,30 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           color: const Color(0xFF00E5FF), // Neon Cyan (High visibility on satellite)
           width: 5,
           zIndex: 2,
+          consumeTapEvents: true,
+          onTap: () => _onSegmentTapped(seg),
         ));
+
+        // Display Crew Marker if crew is assigned or in progress
+        if (seg.assignedCrewId != null || seg.currentState.toString().toUpperCase().contains('INPROGRESS')) {
+          final midPoint = points[points.length ~/ 2];
+          markers.add(Marker(
+            markerId: MarkerId('crew_${seg.id}'),
+            position: midPoint,
+            icon: _crewIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+            zIndex: 10,
+            onTap: () => _onCrewMarkerTapped(seg),
+          ));
+          
+          final machineryPoint = LatLng(midPoint.latitude, midPoint.longitude + 0.00015);
+          markers.add(Marker(
+            markerId: MarkerId('machinery_${seg.id}'),
+            position: machineryPoint,
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+            zIndex: 9,
+            onTap: () => _onMachineryMarkerTapped(seg),
+          ));
+        }
       }
     }
 
@@ -250,6 +339,186 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       });
       _showSaveNodeForm();
     }
+  }
+
+  void _onCrewMarkerTapped(Segment seg) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1D21),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: Colors.orange.withOpacity(0.2),
+                      child: const Icon(Icons.engineering, color: Colors.orange, size: 28),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Crew ID: ${seg.assignedCrewId ?? "Unknown"}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text('Working on Segment ${seg.id}', style: const TextStyle(color: Colors.white54, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6938ef),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => CrewDetailScreen(crewId: seg.assignedCrewId?.toString() ?? "1")));
+                    },
+                    child: const Text('VIEW CREW DETAILS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _onMachineryMarkerTapped(Segment seg) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1D21),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: Colors.yellow.withOpacity(0.2),
+                      child: const Text('🚜', style: TextStyle(fontSize: 28)),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Machinery - Crew ${seg.assignedCrewId ?? "Unknown"}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text('Working on Segment ${seg.id}', style: const TextStyle(color: Colors.white54, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                const Text('Assigned Equipment', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.build, color: Colors.yellow, size: 20),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text('Excavadora Cat 320', style: TextStyle(color: Colors.white)),
+                          Text('EXC-CAT-320 • IN_USE', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.settings, color: Colors.yellow, size: 20),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text('Taladro de Calle', style: TextStyle(color: Colors.white)),
+                          Text('DRL-DITCH-01 • IN_USE', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6938ef),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const MachineryListScreen()));
+                    },
+                    child: const Text('VIEW FULL INVENTORY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _onSegmentTapped(Segment seg) {
+    setState(() {
+      _selectedSegmentId = seg.id;
+      _buildMapObjects();
+    });
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => SegmentEditBottomSheet(
+        segment: seg.toJson(),
+        onSaved: () {
+          _loadClusterData();
+        },
+      ),
+    ).whenComplete(() {
+      setState(() {
+        _selectedSegmentId = null;
+        _buildMapObjects();
+      });
+    });
   }
 
   void _showSaveNodeForm() {
@@ -460,13 +729,37 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   Widget _buildMapArea() {
     return Stack(
       children: [
-        InteractiveMapView(
-          markers: _markers,
-          polylines: _polylines,
-          initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
-          onTap: _onMapTapped,
-          onMapCreated: (controller) => _mapController = controller,
-        ),
+        if (_isOffline && _offlineMapFile != null)
+          InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 4.0,
+            child: Image.file(_offlineMapFile!, fit: BoxFit.cover, width: double.infinity, height: double.infinity),
+          )
+        else
+          InteractiveMapView(
+            markers: _markers,
+            polylines: _polylines,
+            initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+            onTap: _onMapTapped,
+            onMapCreated: (controller) => _mapController = controller,
+          ),
+          
+        if (_isOffline && _offlineMapFile != null)
+          Positioned(
+            top: 40,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+              child: const Row(
+                children: [
+                  Icon(Icons.wifi_off, color: Colors.orangeAccent, size: 16),
+                  SizedBox(width: 8),
+                  Text('MODO OFFLINE', style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
         
         // Action Buttons on Map (3D and Panel Toggle)
         Positioned(
@@ -513,6 +806,18 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                 onPressed: () => setState(() => isPanelVisible = !isPanelVisible),
                 child: Icon(isPanelVisible ? Icons.visibility_off : Icons.visibility, color: Colors.white, size: 20),
               ),
+              if (!_isOffline) ...[
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  heroTag: 'downloadMapBtn',
+                  mini: true,
+                  backgroundColor: _isDownloading ? Colors.grey : const Color(0xFF1C1D21),
+                  onPressed: _isDownloading ? null : _downloadOfflineMap,
+                  child: _isDownloading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.download_for_offline, color: Colors.greenAccent, size: 20),
+                ),
+              ],
             ],
           ),
         ),
@@ -950,17 +1255,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
         child: InkWell(
           onTap: () {
             if (element is Segment) {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (ctx) => SegmentEditBottomSheet(
-                  segment: element.toJson(),
-                  onSaved: () {
-                    _loadClusterData();
-                  },
-                ),
-              );
+              _onSegmentTapped(element);
             }
           },
           child: Padding(

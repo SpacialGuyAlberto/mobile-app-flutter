@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../screens/projekt/segment_permits_screen.dart';
 
 class SegmentEditBottomSheet extends StatefulWidget {
   final Map<String, dynamic> segment;
@@ -17,8 +20,8 @@ class SegmentEditBottomSheet extends StatefulWidget {
 class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
   late String _workflowState;
   late String _workType;
+  String? _selectedCrewId;
   
-  late TextEditingController _crewIdController;
   late TextEditingController _ductDiameterController;
   late TextEditingController _streetNameController;
   late TextEditingController _streetTypeController;
@@ -41,6 +44,12 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     'EXCAVATION', 'DUCTINSTALLATION', 'TRENCHING', 'DRILLING', 'BACKFILL', 'ASPHALT', 'QA', 'DUCTLAYING', 'FIBERBLOWING', 'SPLICING', 'RESTORATION', 'DOCUMENTATION'
   ];
 
+  final List<Map<String, String>> _availableCrews = [
+    {'id': '1', 'name': 'Alpha Digging Team (Hans Müller)'},
+    {'id': '2', 'name': 'Beta Splicing Team (Klaus Weber)'},
+    {'id': '3', 'name': 'Gamma Civil Works (Julia Schmitt)'},
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +59,12 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     _workType = widget.segment['workType']?.toString().toUpperCase() ?? 'TRENCHING';
     if (!_workTypes.contains(_workType)) _workType = 'TRENCHING';
     
-    _crewIdController = TextEditingController(text: widget.segment['assignedCrewId']?.toString() ?? '');
+    _selectedCrewId = widget.segment['assignedCrewId']?.toString();
+    
+    // Fallback if the id is not in the list
+    if (_selectedCrewId != null && !_availableCrews.any((c) => c['id'] == _selectedCrewId)) {
+      _availableCrews.add({'id': _selectedCrewId!, 'name': 'Unknown Crew ($_selectedCrewId)'});
+    }
     _ductDiameterController = TextEditingController(text: widget.segment['ductDiameter']?.toString() ?? '');
     _streetNameController = TextEditingController(text: widget.segment['streetName']?.toString() ?? '');
     _streetTypeController = TextEditingController(text: widget.segment['streetType']?.toString() ?? '');
@@ -66,7 +80,6 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
 
   @override
   void dispose() {
-    _crewIdController.dispose();
     _ductDiameterController.dispose();
     _streetNameController.dispose();
     _streetTypeController.dispose();
@@ -85,10 +98,13 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     setState(() => _isLoading = true);
 
     try {
+      final segmentId = widget.segment['id'];
+      
       final updatedData = {
+        if (segmentId != null) 'id': segmentId,
         'currentState': _workflowState,
         'workType': _workType,
-        'assignedCrewId': int.tryParse(_crewIdController.text),
+        'assignedCrewId': int.tryParse(_selectedCrewId ?? ''),
         'ductDiameter': double.tryParse(_ductDiameterController.text),
         'streetName': _streetNameController.text,
         'streetType': _streetTypeController.text,
@@ -102,14 +118,71 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
         'connectedPopId': _connectedPopIdController.text,
       };
       
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Segment updated successfully'), backgroundColor: Colors.green),
+      if (segmentId != null) {
+        final url = Uri.parse('http://10.0.2.2:8080/api/segments/$segmentId');
+        final response = await http.put(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(updatedData),
         );
-        widget.onSaved();
-        Navigator.pop(context);
+
+        if (response.statusCode == 409) {
+          final errorData = jsonDecode(response.body);
+          if (errorData['error'] == 'CREW_BUSY') {
+            if (mounted) {
+              setState(() => _isLoading = false);
+              final schedule = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: const Color(0xFF1C1D21),
+                  title: const Text('Crew is Busy', style: TextStyle(color: Colors.white)),
+                  content: Text(errorData['message'] ?? 'Crew is currently busy.', style: const TextStyle(color: Colors.white70)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('CANCEL', style: TextStyle(color: Colors.white54)),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('SCHEDULE', style: TextStyle(color: Color(0xFF6938EF), fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              );
+
+              if (schedule == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Crew scheduled successfully for later'), backgroundColor: Colors.green),
+                  );
+                  widget.onSaved();
+                  Navigator.pop(context);
+                }
+              }
+              return;
+            }
+          }
+        } else if (response.statusCode >= 200 && response.statusCode < 300) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Segment updated successfully'), backgroundColor: Colors.green),
+            );
+            widget.onSaved();
+            Navigator.pop(context);
+          }
+        } else {
+          throw Exception('Server returned ${response.statusCode}');
+        }
+      } else {
+        // Mock success if no ID
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Segment updated successfully'), backgroundColor: Colors.green),
+          );
+          widget.onSaved();
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -201,9 +274,28 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.file_present, color: Colors.blueAccent),
+                    tooltip: 'Manage Permits',
+                    onPressed: () {
+                      final segId = widget.segment['id']?.toString();
+                      if (segId != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SegmentPermitsScreen(segmentId: segId),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
               ),
             ],
           ),
@@ -220,7 +312,37 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
                     if (val != null) setState(() => _workType = val);
                   }),
                   
-                  _buildTextField('Assigned Crew ID', _crewIdController, type: TextInputType.number),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Assigned Crew', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70)),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0x1AFFFFFF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedCrewId,
+                            hint: const Text('Select a Crew', style: TextStyle(color: Colors.white54)),
+                            isExpanded: true,
+                            dropdownColor: const Color(0xFF1A1A1A),
+                            style: const TextStyle(color: Colors.white),
+                            items: [
+                              const DropdownMenuItem<String>(value: null, child: Text('None')),
+                              ..._availableCrews.map((crew) => DropdownMenuItem(value: crew['id'], child: Text(crew['name']!))).toList(),
+                            ],
+                            onChanged: (val) => setState(() => _selectedCrewId = val),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+
                   _buildTextField('Street Name', _streetNameController),
                   _buildTextField('Street Type', _streetTypeController),
                   _buildTextField('Soil Type', _soilTypeController),

@@ -14,12 +14,14 @@ class ARCompanionState {
   final String targetIp;
   final int targetPort;
   final String lastMessage;
+  final int? projectId;
 
   ARCompanionState({
     this.isBroadcasting = false,
-    this.targetIp = '192.168.1.100',
+    this.targetIp = '255.255.255.255',
     this.targetPort = 8000,
     this.lastMessage = '',
+    this.projectId,
   });
 
   ARCompanionState copyWith({
@@ -27,12 +29,14 @@ class ARCompanionState {
     String? targetIp,
     int? targetPort,
     String? lastMessage,
+    int? projectId,
   }) {
     return ARCompanionState(
       isBroadcasting: isBroadcasting ?? this.isBroadcasting,
       targetIp: targetIp ?? this.targetIp,
       targetPort: targetPort ?? this.targetPort,
       lastMessage: lastMessage ?? this.lastMessage,
+      projectId: projectId ?? this.projectId,
     );
   }
 }
@@ -42,6 +46,10 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
 
   StreamSubscription<Position>? _positionSubscription;
   RawDatagramSocket? _socket;
+
+  void setProjectId(int? id) {
+    state = state.copyWith(projectId: id);
+  }
 
   Future<void> startBroadcasting(String ip, int port) async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -85,6 +93,7 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
           'heading': position.heading,
           'accuracy': position.accuracy,
           'timestamp': DateTime.now().toIso8601String(),
+          'projectId': state.projectId,
         };
 
         final bytes = utf8.encode(jsonEncode(data));

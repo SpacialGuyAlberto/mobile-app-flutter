@@ -1,24 +1,54 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 class ApiService {
   // Using 10.0.2.2 which is the special alias to your host loopback interface 
   // on the Android emulator. Use 'http://localhost:8080' if running on iOS simulator.
   static const String baseUrl = 'http://10.0.2.2:8080/api';
 
-  Future<dynamic> get(String endpoint) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl$endpoint'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-    );
+  Future<File> _getCacheFile(String endpoint) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final safeName = endpoint.replaceAll('/', '_');
+    return File('${dir.path}/$safeName.json');
+  }
 
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to load data from $endpoint. Status code: ${response.statusCode}');
+  Future<dynamic> get(String endpoint) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = response.body;
+        // Save to cache
+        try {
+          final file = await _getCacheFile(endpoint);
+          await file.writeAsString(data);
+        } catch (e) {
+          print('Cache write error: $e');
+        }
+        return jsonDecode(data);
+      } else {
+        throw Exception('Failed to load data from $endpoint. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Network error ($e), attempting to load from cache for $endpoint');
+      try {
+        final file = await _getCacheFile(endpoint);
+        if (await file.exists()) {
+          final data = await file.readAsString();
+          return jsonDecode(data);
+        }
+      } catch (cacheError) {
+        print('Cache read error: $cacheError');
+      }
+      throw Exception('Network failed and no offline cache available for $endpoint');
     }
   }
 
@@ -30,7 +60,7 @@ class ApiService {
         'Accept': 'application/json',
       },
       body: jsonEncode(body),
-    );
+    ).timeout(const Duration(seconds: 5));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body);

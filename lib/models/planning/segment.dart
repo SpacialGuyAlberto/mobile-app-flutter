@@ -10,6 +10,7 @@ class Segment {
   final String id;
 
   final Crew? assignedCrew;
+  final String? assignedCrewId;
   final WorkType workType;
   final WorkflowState currentState;
   final String? streetName;
@@ -38,6 +39,7 @@ class Segment {
   const Segment({
     required this.id,
     this.assignedCrew,
+    this.assignedCrewId,
     required this.workType,
     this.currentState = WorkflowState.plan,
     this.streetName,
@@ -67,6 +69,7 @@ class Segment {
   factory Segment.fromJson(Map<String, dynamic> json) {
     return Segment(
       id: json['id'].toString(),
+      assignedCrewId: json['assignedCrewId']?.toString(),
       workType: WorkType.values.firstWhere(
         (w) => w.toString().split('.').last.toUpperCase() == json['workType']?.toString().toUpperCase(),
         orElse: () => WorkType.trenching,
@@ -109,6 +112,7 @@ class Segment {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'assignedCrewId': assignedCrewId,
       'workType': workType.toString().split('.').last,
       'currentState': currentState.toString().split('.').last,
       'streetName': streetName,
