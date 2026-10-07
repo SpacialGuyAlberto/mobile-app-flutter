@@ -285,6 +285,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
     String? assignedCrewId;
     String? startNvtId;
     String? endNvtId;
+    String? connectedPopId;
     
     bool isSaving = false;
 
@@ -328,6 +329,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: streetType,
+                                isExpanded: true,
                                 dropdownColor: const Color(0xFF16171A),
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
@@ -344,6 +346,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: workType,
+                                isExpanded: true,
                                 dropdownColor: const Color(0xFF16171A),
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
@@ -365,6 +368,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: soilType,
+                                isExpanded: true,
                                 dropdownColor: const Color(0xFF16171A),
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
@@ -381,6 +385,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: trafficLevel,
+                                isExpanded: true,
                                 dropdownColor: const Color(0xFF16171A),
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
@@ -412,6 +417,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                         
                         DropdownButtonFormField<String?>(
                           value: assignedCrewId,
+                          isExpanded: true,
                           dropdownColor: const Color(0xFF16171A),
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
@@ -433,6 +439,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String?>(
                                 value: startNvtId,
+                                isExpanded: true,
                                 dropdownColor: const Color(0xFF16171A),
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
@@ -452,6 +459,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String?>(
                                 value: endNvtId,
+                                isExpanded: true,
                                 dropdownColor: const Color(0xFF16171A),
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
@@ -469,7 +477,24 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                             ),
                           ],
                         ),
-
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String?>(
+                          value: connectedPopId,
+                          isExpanded: true,
+                          dropdownColor: const Color(0xFF16171A),
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Connected POP',
+                            labelStyle: const TextStyle(color: Color(0xFF8A8F98)),
+                            enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white24), borderRadius: BorderRadius.circular(12)),
+                            focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.blueAccent), borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(value: null, child: Text('-- None --', style: TextStyle(color: Colors.white54))),
+                            ..._pops.map((p) => DropdownMenuItem<String?>(value: p['id']?.toString(), child: Text(p['name'] ?? 'POP'))),
+                          ],
+                          onChanged: (val) { setSheetState(() => connectedPopId = val); },
+                        ),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
@@ -503,6 +528,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                                   "assignedCrewId": assignedCrewId,
                                   "startNvtId": startNvtId,
                                   "endNvtId": endNvtId,
+                                  "connectedPopId": connectedPopId,
                                   "currentState": "PLAN",
                                   "length": _getTotalLength(),
                                   "startLatitude": _points.first.latitude,

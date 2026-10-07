@@ -5,8 +5,8 @@ import 'package:path_provider/path_provider.dart';
 
 class ApiService {
   // Using 10.0.2.2 which is the special alias to your host loopback interface 
-  // on the Android emulator. Use 'http://localhost:8080' if running on iOS simulator.
-  static const String baseUrl = 'http://10.0.2.2:8080/api';
+  // Using direct computer IP for physical phone testing.
+  static const String baseUrl = 'http://192.168.178.57:8080/api';
 
   Future<File> _getCacheFile(String endpoint) async {
     final dir = await getApplicationDocumentsDirectory();

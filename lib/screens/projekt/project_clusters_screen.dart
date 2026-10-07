@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/network/api_service.dart';
 
 class ProjectClustersScreen extends StatefulWidget {
   final String projectId;
@@ -11,37 +12,68 @@ class ProjectClustersScreen extends StatefulWidget {
 
 class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
   int _selectedTabIndex = 0;
+  bool _isLoading = true;
+  String _projectName = 'Loading...';
+  List<Map<String, dynamic>> _clusters = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final api = ApiService();
+      // Fetch project details
+      final projectData = await api.get('/projects/${widget.projectId}');
+      _projectName = projectData['name'] ?? 'Project ${widget.projectId}';
+
+      // Fetch all clusters
+      final clustersData = await api.get('/clusters');
+      final allClusters = List<Map<String, dynamic>>.from(clustersData);
+      
+      // Filter by projectId
+      final projectClusters = allClusters.where((c) => c['projectId'].toString() == widget.projectId.toString()).toList();
+      
+      // Calculate popCount and netzverteilerCount for the UI
+      for (var c in projectClusters) {
+        final pops = c['pops'] as List? ?? [];
+        c['popCount'] = pops.length;
+        int nvtCount = 0;
+        for (var p in pops) {
+          final nvts = p['nvts'] as List? ?? [];
+          nvtCount += nvts.length;
+        }
+        c['netzverteilerCount'] = nvtCount;
+        c['description'] = c['description'] ?? 'No description provided.';
+        c['name'] = c['name'] ?? 'Cluster ${c['id']}';
+      }
+
+      if (mounted) {
+        setState(() {
+          _clusters = projectClusters;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading clusters: $e');
+      if (mounted) {
+        setState(() {
+          _projectName = 'Project ${widget.projectId}';
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Mocked data mirroring the user's screenshot
-    final List<Map<String, dynamic>> clusters = [
-      {
-        'id': '2',
-        'projectId': widget.projectId,
-        'name': 'CLUSTER SÜD',
-        'description': 'HIER GEHT UM DSA OST CLUSTER',
-        'popCount': 3,
-        'netzverteilerCount': 2,
-      }
-    ];
-
     return Scaffold(
       backgroundColor: const Color(0xFF131415),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white70),
-          onPressed: () {},
-        ),
-        title: const Text(
-          'QUARKBAU / MANAGEMENT SYSTEM', 
-          style: TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)
-        ),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
+
+      body: _isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -57,9 +89,9 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Fürth Dambach\nDeployment',
-              style: TextStyle(color: Colors.white, fontSize: 42, fontFamily: 'serif', height: 1.0, letterSpacing: -0.5),
+            Text(
+              _projectName,
+              style: const TextStyle(color: Colors.white, fontSize: 42, fontFamily: 'serif', height: 1.0, letterSpacing: -0.5),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -102,7 +134,7 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
             const SizedBox(height: 24),
             
             // Clusters List
-            ...clusters.map((cluster) => _buildClusterCard(cluster)).toList(),
+            ..._clusters.map((cluster) => _buildClusterCard(cluster)).toList(),
           ],
         ),
       ),

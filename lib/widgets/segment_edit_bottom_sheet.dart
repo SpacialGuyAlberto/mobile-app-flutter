@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../screens/projekt/segment_permits_screen.dart';
+import '../core/network/api_service.dart';
 
 class SegmentEditBottomSheet extends StatefulWidget {
   final Map<String, dynamic> segment;
@@ -30,9 +31,6 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
   late TextEditingController _trafficLevelController;
   late TextEditingController _startAddressController;
   late TextEditingController _endAddressController;
-  late TextEditingController _startNvtIdController;
-  late TextEditingController _endNvtIdController;
-  late TextEditingController _connectedPopIdController;
 
   bool _isLoading = false;
 
@@ -44,11 +42,13 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     'EXCAVATION', 'DUCTINSTALLATION', 'TRENCHING', 'DRILLING', 'BACKFILL', 'ASPHALT', 'QA', 'DUCTLAYING', 'FIBERBLOWING', 'SPLICING', 'RESTORATION', 'DOCUMENTATION'
   ];
 
-  final List<Map<String, String>> _availableCrews = [
-    {'id': '1', 'name': 'Alpha Digging Team (Hans Müller)'},
-    {'id': '2', 'name': 'Beta Splicing Team (Klaus Weber)'},
-    {'id': '3', 'name': 'Gamma Civil Works (Julia Schmitt)'},
-  ];
+  List<dynamic> _availableCrews = [];
+  List<dynamic> _pops = [];
+  List<dynamic> _netzverteilers = [];
+  
+  String? _startNvtId;
+  String? _endNvtId;
+  String? _connectedPopId;
 
   @override
   void initState() {
@@ -61,10 +61,7 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     
     _selectedCrewId = widget.segment['assignedCrewId']?.toString();
     
-    // Fallback if the id is not in the list
-    if (_selectedCrewId != null && !_availableCrews.any((c) => c['id'] == _selectedCrewId)) {
-      _availableCrews.add({'id': _selectedCrewId!, 'name': 'Unknown Crew ($_selectedCrewId)'});
-    }
+
     _ductDiameterController = TextEditingController(text: widget.segment['ductDiameter']?.toString() ?? '');
     _streetNameController = TextEditingController(text: widget.segment['streetName']?.toString() ?? '');
     _streetTypeController = TextEditingController(text: widget.segment['streetType']?.toString() ?? '');
@@ -73,9 +70,33 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     _trafficLevelController = TextEditingController(text: widget.segment['trafficLevel']?.toString() ?? '');
     _startAddressController = TextEditingController(text: widget.segment['startAddress']?.toString() ?? '');
     _endAddressController = TextEditingController(text: widget.segment['endAddress']?.toString() ?? '');
-    _startNvtIdController = TextEditingController(text: widget.segment['startNvtId']?.toString() ?? '');
-    _endNvtIdController = TextEditingController(text: widget.segment['endNvtId']?.toString() ?? '');
-    _connectedPopIdController = TextEditingController(text: widget.segment['connectedPopId']?.toString() ?? '');
+    
+    _startNvtId = widget.segment['startNvtId']?.toString();
+    _endNvtId = widget.segment['endNvtId']?.toString();
+    _connectedPopId = widget.segment['connectedPopId']?.toString();
+    
+    _loadMetadata();
+  }
+
+
+  Future<void> _loadMetadata() async {
+    try {
+      final crewsData = await ApiService().get('/crews');
+      if (crewsData is List) setState(() => _availableCrews = crewsData);
+      
+      final popData = await ApiService().get('/pops');
+      if (popData is List) setState(() => _pops = popData);
+      
+      final nvtData = await ApiService().get('/netzverteilers');
+      if (nvtData is List) setState(() => _netzverteilers = nvtData);
+      
+      // Fallback if the id is not in the dynamically loaded list
+      if (_selectedCrewId != null && !_availableCrews.any((c) => c['id']?.toString() == _selectedCrewId)) {
+        _availableCrews.add({'id': _selectedCrewId!, 'name': 'Unknown Crew ($_selectedCrewId)'});
+      }
+    } catch (e) {
+      print('Could not load metadata: $e');
+    }
   }
 
   @override
@@ -88,9 +109,6 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     _trafficLevelController.dispose();
     _startAddressController.dispose();
     _endAddressController.dispose();
-    _startNvtIdController.dispose();
-    _endNvtIdController.dispose();
-    _connectedPopIdController.dispose();
     super.dispose();
   }
 
@@ -113,9 +131,9 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
         'trafficLevel': _trafficLevelController.text,
         'startAddress': _startAddressController.text,
         'endAddress': _endAddressController.text,
-        'startNvtId': _startNvtIdController.text,
-        'endNvtId': _endNvtIdController.text,
-        'connectedPopId': _connectedPopIdController.text,
+        'startNvtId': _startNvtId,
+        'endNvtId': _endNvtId,
+        'connectedPopId': _connectedPopId,
       };
       
       if (segmentId != null) {
@@ -226,6 +244,48 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
     );
   }
 
+
+  Widget _buildDynamicDropdown(String label, String? value, List<dynamic> items, ValueChanged<String?> onChanged) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70)),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0x1AFFFFFF),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+              value: value,
+              isExpanded: true,
+              dropdownColor: const Color(0xFF1A1A1A),
+              style: const TextStyle(color: Colors.white),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('-- None --', style: TextStyle(color: Colors.white54))),
+                if (value != null && !items.any((item) => item['id']?.toString() == value))
+                  DropdownMenuItem<String?>(value: value, child: Text('Loading ($value)...')),
+                ...items.map((item) {
+                  final idStr = item['id']?.toString();
+                  final nameStr = item['identifier'] ?? item['name'] ?? item['id']?.toString() ?? 'Unknown';
+                  return DropdownMenuItem<String?>(
+                    value: idStr,
+                    child: Text(nameStr),
+                  );
+                }).toList(),
+              ],
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
   Widget _buildTextField(String label, TextEditingController controller, {TextInputType type = TextInputType.text}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,16 +385,20 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
                           border: Border.all(color: Colors.white24),
                         ),
                         child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
+                          child: DropdownButton<String?>(
                             value: _selectedCrewId,
                             hint: const Text('Select a Crew', style: TextStyle(color: Colors.white54)),
                             isExpanded: true,
                             dropdownColor: const Color(0xFF1A1A1A),
                             style: const TextStyle(color: Colors.white),
+
                             items: [
-                              const DropdownMenuItem<String>(value: null, child: Text('None')),
-                              ..._availableCrews.map((crew) => DropdownMenuItem(value: crew['id'], child: Text(crew['name']!))).toList(),
+                              const DropdownMenuItem<String?>(value: null, child: Text('None', style: TextStyle(color: Colors.white54))),
+                              if (_selectedCrewId != null && !_availableCrews.any((c) => c['id']?.toString() == _selectedCrewId))
+                                DropdownMenuItem<String?>(value: _selectedCrewId, child: Text('Loading ($_selectedCrewId)...')),
+                              ..._availableCrews.map((crew) => DropdownMenuItem<String?>(value: crew['id']?.toString(), child: Text(crew['name'] ?? 'Unknown Crew'))).toList(),
                             ],
+
                             onChanged: (val) => setState(() => _selectedCrewId = val),
                           ),
                         ),
@@ -356,9 +420,9 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
                   
                   _buildTextField('Start Address', _startAddressController),
                   _buildTextField('End Address', _endAddressController),
-                  _buildTextField('Start NVT ID', _startNvtIdController),
-                  _buildTextField('End NVT ID', _endNvtIdController),
-                  _buildTextField('Connected POP ID', _connectedPopIdController),
+                  _buildDynamicDropdown('Start NVT', _startNvtId, _netzverteilers, (val) => setState(() => _startNvtId = val)),
+                  _buildDynamicDropdown('End NVT', _endNvtId, _netzverteilers, (val) => setState(() => _endNvtId = val)),
+                  _buildDynamicDropdown('Connected POP', _connectedPopId, _pops, (val) => setState(() => _connectedPopId = val)),
                 ],
               ),
             ),
