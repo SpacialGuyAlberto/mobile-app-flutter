@@ -19,7 +19,7 @@ class ARCompanionState {
 
   ARCompanionState({
     this.isBroadcasting = false,
-    this.targetIp = '192.168.178.64',
+    this.targetIp = '192.168.178.57',
     this.targetPort = 8000,
     this.lastMessage = '',
     this.projectId,
@@ -70,6 +70,8 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
     }
   }
 
+  Timer? _heartbeatTimer;
+
   Future<void> startBroadcasting(String ip, int port) async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -100,50 +102,62 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
       _positionSubscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 0, // Update immediately
+          distanceFilter: 0,
         ),
       ).listen((Position position) {
         if (!state.isBroadcasting) return;
+        _lastElevationPosition = position;
+        _sendUdpPacket(position);
+      });
 
-        // Fetch Google elevation if missing or moved > 5 meters
-        if (_lastGoogleElevation == null || _lastElevationPosition == null || 
-            Geolocator.distanceBetween(_lastElevationPosition!.latitude, _lastElevationPosition!.longitude, position.latitude, position.longitude) > 5) {
-          _lastElevationPosition = position;
-          _fetchGoogleElevation(position.latitude, position.longitude); // No await to avoid blocking UDP
-        }
-
-        final altToSend = _lastGoogleElevation ?? position.altitude;
-
-        final Map<String, dynamic> data = {
-          'lat': position.latitude,
-          'lng': position.longitude,
-          'alt': altToSend,
-          'heading': position.heading,
-          'accuracy': position.accuracy,
-          'timestamp': DateTime.now().toIso8601String(),
-          'projectId': state.projectId,
-        };
-
-        final bytes = utf8.encode(jsonEncode(data));
-        
-        try {
-          final targetAddress = InternetAddress(state.targetIp);
-          _socket?.send(bytes, targetAddress, state.targetPort);
-          
-          state = state.copyWith(lastMessage: 'Sent: lat: ${position.latitude.toStringAsFixed(6)}, lng: ${position.longitude.toStringAsFixed(6)}');
-        } catch (e) {
-          state = state.copyWith(lastMessage: 'Error sending UDP: $e');
+      // HEARTBEAT para el Emulador: Enviar cada 2 segundos forzosamente aunque no haya movimiento
+      _heartbeatTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+        if (state.isBroadcasting && _lastElevationPosition != null) {
+          _sendUdpPacket(_lastElevationPosition!);
         }
       });
+      
     } catch (e) {
       state = state.copyWith(lastMessage: 'Failed to bind socket: $e');
     }
   }
 
+  void _sendUdpPacket(Position position) {
+    if (_lastGoogleElevation == null || 
+        Geolocator.distanceBetween(_lastElevationPosition!.latitude, _lastElevationPosition!.longitude, position.latitude, position.longitude) > 5) {
+      _fetchGoogleElevation(position.latitude, position.longitude); 
+    }
+
+    final altToSend = _lastGoogleElevation ?? position.altitude;
+
+    final Map<String, dynamic> data = {
+      'lat': position.latitude,
+      'lng': position.longitude,
+      'alt': altToSend,
+      'heading': position.heading,
+      'accuracy': position.accuracy,
+      'timestamp': DateTime.now().toIso8601String(),
+      'projectId': state.projectId,
+    };
+
+    final bytes = utf8.encode(jsonEncode(data));
+    
+    try {
+      final targetAddress = InternetAddress(state.targetIp);
+      _socket?.send(bytes, targetAddress, state.targetPort);
+      
+      state = state.copyWith(lastMessage: 'Sent: lat: ${position.latitude.toStringAsFixed(6)}, lng: ${position.longitude.toStringAsFixed(6)} (Proj: ${state.projectId})');
+    } catch (e) {
+      state = state.copyWith(lastMessage: 'Error sending UDP: $e');
+    }
+  }
+
   void stopBroadcasting() {
     _positionSubscription?.cancel();
+    _heartbeatTimer?.cancel();
     _socket?.close();
     _positionSubscription = null;
+    _heartbeatTimer = null;
     _socket = null;
     state = state.copyWith(isBroadcasting: false, lastMessage: 'Broadcasting stopped.');
   }

@@ -58,7 +58,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
 
   Future<void> _loadMetadata() async {
     try {
-      final crewsData = await ApiService().get('/crews');
+      final crewsData = await ApiService().get('/field/crews');
       if (crewsData is List) setState(() => _crews = crewsData);
     } catch (e) {
       print('Could not load crews: $e');
@@ -542,10 +542,10 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                                   "soilType": soilType,
                                   "trafficLevel": trafficLevel,
                                   "ductDiameter": double.tryParse(ductDiameterController.text),
-                                  "assignedCrewId": assignedCrewId,
-                                  "startNvtId": startNvtId,
-                                  "endNvtId": endNvtId,
-                                  "connectedPopId": connectedPopId,
+                                  "assignedCrewId": assignedCrewId != null ? int.tryParse(assignedCrewId!) : null,
+                                  "startNvtId": startNvtId != null ? int.tryParse(startNvtId!) : null,
+                                  "endNvtId": endNvtId != null ? int.tryParse(endNvtId!) : null,
+                                  "connectedPopId": connectedPopId != null ? int.tryParse(connectedPopId!) : null,
                                   "currentState": "PLAN",
                                   "length": _getTotalLength(),
                                   "startLatitude": _points.first.latitude,
@@ -555,32 +555,23 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                                   "geometry": geometry
                                 };
                                 
-                                String url = 'http://localhost:8080/api/v1/planning/segments';
+                                String endpoint = '/segments';
                                 if (widget.projectId != null) {
-                                  url = 'http://localhost:8080/api/v1/planning/projects/${widget.projectId}/segments';
+                                  endpoint = '/projects/${widget.projectId}/segments';
                                 }
                                 
-                                final res = await http.post(
-                                  Uri.parse(url),
-                                  headers: {"Content-Type": "application/json"},
-                                  body: jsonEncode(body)
-                                );
+                                await ApiService().post(endpoint, body);
                                 
-                                if (res.statusCode >= 200 && res.statusCode < 300) {
-                                  Navigator.pop(sheetContext); 
-                                  ScaffoldMessenger.of(this.context).showSnackBar(
-                                    const SnackBar(content: Text('Segment Created in Backend!'), backgroundColor: Colors.green),
-                                  );
-                                  this.context.pop(); 
-                                } else {
-                                  ScaffoldMessenger.of(sheetContext).showSnackBar(
-                                    SnackBar(content: Text('Error: ${res.statusCode} - ${res.body}'), backgroundColor: Colors.red),
-                                  );
-                                }
-                              } catch (e) {
                                 Navigator.pop(sheetContext); 
                                 ScaffoldMessenger.of(this.context).showSnackBar(
-                                  const SnackBar(content: Text('Segment Created Locally (Backend unreachable)'), backgroundColor: Colors.green),
+                                  const SnackBar(content: Text('Segment Created in Backend!'), backgroundColor: Colors.green),
+                                );
+                                this.context.pop(); 
+                              } catch (e) {
+                                print('Save segment error: $e');
+                                Navigator.pop(sheetContext); 
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  SnackBar(content: Text('Segment Created Locally (Backend err: $e)'), backgroundColor: Colors.orange),
                                 );
                                 this.context.pop();
                               } finally {
