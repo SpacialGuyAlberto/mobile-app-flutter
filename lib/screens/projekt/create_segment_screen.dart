@@ -60,15 +60,32 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
     try {
       final crewsData = await ApiService().get('/crews');
       if (crewsData is List) setState(() => _crews = crewsData);
-      
+    } catch (e) {
+      print('Could not load crews: $e');
+      setState(() => _crews = [
+        {'id': 1, 'name': 'Crew Alpha (Mock)'},
+        {'id': 2, 'name': 'Crew Beta (Mock)'},
+        {'id': 3, 'name': 'Crew Gamma (Mock)'},
+      ]);
+    }
+    
+    try {
       final popData = await ApiService().get('/pops');
       if (popData is List) setState(() => _pops = popData);
-      
+    } catch (e) {
+      print('Could not load pops: $e');
+    }
+    
+    try {
       if (widget.projectId != null) {
         final segmentData = await ApiService().get('/projects/${widget.projectId}/segments');
         if (segmentData is List) setState(() => _segmentsContext = segmentData);
       }
-      
+    } catch (e) {
+      print('Could not load segments: $e');
+    }
+    
+    try {
       final nvtData = await ApiService().get('/netzverteilers');
       if (nvtData is List) {
         setState(() => _netzverteilers = nvtData);
@@ -80,11 +97,11 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
           _mapController?.animateCamera(CameraUpdate.newCameraPosition(_initialCamera));
         }
       }
-      
-      _buildContextElements();
     } catch (e) {
-      print('Could not load metadata: $e');
+      print('Could not load netzverteilers: $e');
     }
+    
+    _buildContextElements();
   }
 
   void _buildContextElements() {
