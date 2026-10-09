@@ -23,7 +23,7 @@ class _ProjectSegmentsScreenState extends State<ProjectSegmentsScreen> {
 
   Future<List<dynamic>> _fetchSegments() async {
     try {
-      final response = await http.get(Uri.parse('http://fedora.fritz.box:8080/api/v1/planning/projects/${widget.projectId}/segments'));
+      final response = await http.get(Uri.parse('http://192.168.178.57:8080/api/v1/planning/projects/${widget.projectId}/segments'));
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       }

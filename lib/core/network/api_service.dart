@@ -4,9 +4,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 class ApiService {
-  // Using fedora.fritz.box which is the special alias to your host loopback interface 
+  // Using 192.168.178.57 which is the special alias to your host loopback interface 
   // Using direct computer IP for physical phone testing.
-  static const String baseUrl = 'http://fedora.fritz.box:8080/api';
+  static const String baseUrl = 'http://192.168.178.57:8080/api';
 
   Future<File> _getCacheFile(String endpoint) async {
     final dir = await getApplicationDocumentsDirectory();

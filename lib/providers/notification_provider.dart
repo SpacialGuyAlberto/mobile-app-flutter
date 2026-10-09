@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../models/notification_message.dart';
+import 'ar_companion_provider.dart';
 
 class NotificationState {
   final List<NotificationMessage> notifications;
@@ -24,15 +25,16 @@ class NotificationState {
 class NotificationNotifier extends StateNotifier<NotificationState> {
   // Use http client to read SSE stream
   final http.Client _client = http.Client();
+  final Ref ref;
   
-  NotificationNotifier() : super(NotificationState()) {
+  NotificationNotifier(this.ref) : super(NotificationState()) {
     _startListening();
   }
 
   void _startListening() async {
     // Assuming user ID 1 for now, in a real app this would come from an AuthProvider
-    // Map fedora.fritz.box to Android Emulator local IP if needed
-    final host = Platform.isAndroid ? 'fedora.fritz.box' : 'fedora.fritz.box';
+    // Map 192.168.178.57 to Android Emulator local IP if needed
+    final host = Platform.isAndroid ? '192.168.178.57' : '192.168.178.57';
     final url = Uri.parse('http://$host:8080/api/notifications/stream?userId=1');
     final request = http.Request('GET', url);
     request.headers['Accept'] = 'text/event-stream';
@@ -69,6 +71,11 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       notifications: [message, ...state.notifications],
       unreadCount: state.unreadCount + 1,
     );
+    
+    // Forward via UDP to AR headset!
+    ref.read(arCompanionProvider.notifier).triggerUdpNotification(
+      message.title, message.body, message.entityId ?? ""
+    );
   }
 
   void markAllAsRead() {
@@ -83,5 +90,5 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 }
 
 final notificationProvider = StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
-  return NotificationNotifier();
+  return NotificationNotifier(ref);
 });

@@ -11,7 +11,7 @@ class ARCompanionScreen extends ConsumerStatefulWidget {
 }
 
 class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
-  final _ipController = TextEditingController(text: '192.168.178.X'); // ¡Escribe aquí la IP de tus gafas!
+  final _ipController = TextEditingController(text: '192.168.178.64'); // IP de la laptop/Unity Editor
   final _portController = TextEditingController(text: '8000');
 
   @override

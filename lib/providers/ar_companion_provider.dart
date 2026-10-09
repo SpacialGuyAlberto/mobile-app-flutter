@@ -122,6 +122,23 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
     }
   }
 
+  String? _lastNotificationTitle;
+  String? _lastNotificationBody;
+  String? _lastNotificationEntityId;
+  String? _lastNotificationId;
+
+  void triggerUdpNotification(String title, String body, String entityId) {
+    _lastNotificationTitle = title;
+    _lastNotificationBody = body;
+    _lastNotificationEntityId = entityId;
+    _lastNotificationId = DateTime.now().millisecondsSinceEpoch.toString();
+    
+    // Force immediate broadcast
+    if (state.isBroadcasting && _lastElevationPosition != null) {
+      _sendUdpPacket(_lastElevationPosition!);
+    }
+  }
+
   void _sendUdpPacket(Position position) {
     if (_lastGoogleElevation == null || 
         Geolocator.distanceBetween(_lastElevationPosition!.latitude, _lastElevationPosition!.longitude, position.latitude, position.longitude) > 5) {
@@ -139,6 +156,14 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
       'timestamp': DateTime.now().toIso8601String(),
       'projectId': state.projectId,
     };
+
+    if (_lastNotificationTitle != null) {
+      data['notificationTitle'] = _lastNotificationTitle;
+      data['notificationBody'] = _lastNotificationBody;
+      data['notificationEntityId'] = _lastNotificationEntityId;
+      data['notificationId'] = _lastNotificationId;
+      // We do NOT clear it. It will be sent continuously to guarantee UDP delivery!
+    }
 
     final bytes = utf8.encode(jsonEncode(data));
     

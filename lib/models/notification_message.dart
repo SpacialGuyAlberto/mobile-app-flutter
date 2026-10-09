@@ -5,6 +5,10 @@ class NotificationMessage {
   final String eventType;
   final Map<String, dynamic> payload;
   final DateTime timestamp;
+  
+  // Newly added to match backend
+  final String? channel;
+  final String? entityId;
 
   NotificationMessage({
     required this.id,
@@ -13,6 +17,8 @@ class NotificationMessage {
     required this.eventType,
     required this.payload,
     required this.timestamp,
+    this.channel,
+    this.entityId,
   });
 
   factory NotificationMessage.fromJson(Map<String, dynamic> json) {
@@ -25,6 +31,8 @@ class NotificationMessage {
       timestamp: json['timestamp'] != null 
           ? DateTime.parse(json['timestamp']) 
           : DateTime.now(),
+      channel: json['channel'] ?? '',
+      entityId: json['entityId'] ?? '',
     );
   }
 }
