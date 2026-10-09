@@ -36,7 +36,7 @@ class _ObreroMapScreenState extends State<ObreroMapScreen> {
 
     try {
       // In a real app, pass the crew ID or auth token.
-      final response = await http.get(Uri.parse('http://localhost:8080/api/v1/planning/crews/1/segments'));
+      final response = await http.get(Uri.parse('http://fedora.fritz.box:8080/api/v1/planning/crews/1/segments'));
 
       if (response.statusCode == 200) {
         final List<dynamic> segments = jsonDecode(response.body);

@@ -19,7 +19,7 @@ class ARCompanionState {
 
   ARCompanionState({
     this.isBroadcasting = false,
-    this.targetIp = '192.168.178.57',
+    this.targetIp = '192.168.178.64',
     this.targetPort = 8000,
     this.lastMessage = '',
     this.projectId,
