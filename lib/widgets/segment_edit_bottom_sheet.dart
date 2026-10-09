@@ -35,7 +35,7 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
   bool _isLoading = false;
 
   final List<String> _workflowStates = [
-    'PLAN', 'SURVEY', 'PERMISSION', 'READY', 'CONSTRUCTION', 'QA', 'COMPLETED', 'INPROGRESS', 'PLANNED'
+    'PLAN', 'PLANNED', 'SCHEDULED', 'IN_PROGRESS', 'BLOCKED', 'HOLD', 'CANCELLED', 'COMPLETED'
   ];
   
   final List<String> _workTypes = [
