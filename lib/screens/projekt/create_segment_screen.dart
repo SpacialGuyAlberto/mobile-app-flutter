@@ -31,6 +31,9 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
   final Set<Polyline> _polylines = {};
   final List<GeometryPoint> _points = [];
   
+  double _curveSharpness = 0.85;
+  bool _isVectorAnalyticsExpanded = true;
+  
   GoogleMapController? _mapController;
   final TextEditingController _searchController = TextEditingController();
   List<dynamic> _crews = [];
@@ -217,13 +220,52 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
 
   double _getTotalLength() {
     double total = 0;
-    for (int i = 0; i < _points.length - 1; i++) {
+    List<GeometryPoint> routePoints = _points;
+    if (_points.length > 2) {
+      routePoints = _catmullRomSpline(_points, _curveSharpness);
+    }
+    for (int i = 0; i < routePoints.length - 1; i++) {
       total += _calculateDistance(
-        _points[i].latitude, _points[i].longitude, 
-        _points[i+1].latitude, _points[i+1].longitude
+        routePoints[i].latitude, routePoints[i].longitude, 
+        routePoints[i+1].latitude, routePoints[i+1].longitude
       );
     }
     return total;
+  }
+
+  List<GeometryPoint> _catmullRomSpline(List<GeometryPoint> points, double sharpness) {
+    if (points.length < 3) return points;
+    List<GeometryPoint> result = [];
+    int resolution = 20;
+    
+    for (int i = 0; i < points.length - 1; i++) {
+      final p0 = i == 0 ? points[i] : points[i - 1];
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final p3 = i + 2 < points.length ? points[i + 2] : points[i + 1];
+      
+      for (int tInt = 0; tInt < resolution; tInt++) {
+        double t = tInt / resolution;
+        double t2 = t * t;
+        double t3 = t2 * t;
+        
+        double tension = 1.0 - sharpness; 
+        double m0 = tension * 0.5;
+        
+        double b0 = -m0*t3 + 2.0*m0*t2 - m0*t;
+        double b1 = (2.0-m0)*t3 + (m0-3.0)*t2 + 1.0;
+        double b2 = (m0-2.0)*t3 + (3.0-2.0*m0)*t2 + m0*t;
+        double b3 = m0*t3 - m0*t2;
+        
+        double lat = p0.latitude*b0 + p1.latitude*b1 + p2.latitude*b2 + p3.latitude*b3;
+        double lng = p0.longitude*b0 + p1.longitude*b1 + p2.longitude*b2 + p3.longitude*b3;
+        double z = (p0.z ?? 0)*b0 + (p1.z ?? 0)*b1 + (p2.z ?? 0)*b2 + (p3.z ?? 0)*b3;
+        
+        result.add(GeometryPoint(latitude: lat, longitude: lng, z: z));
+      }
+    }
+    result.add(points.last);
+    return result;
   }
 
   Future<void> _onMapTapped(LatLng position) async {
@@ -266,6 +308,19 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
         icon: BitmapDescriptor.defaultMarkerWithHue(
           i == 0 ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed,
         ),
+        draggable: true,
+        onDrag: (LatLng newPos) {
+          setState(() {
+            _points[i] = GeometryPoint(latitude: newPos.latitude, longitude: newPos.longitude, z: _points[i].z);
+            _rebuildMapElements();
+          });
+        },
+        onDragEnd: (LatLng newPos) {
+          setState(() {
+            _points[i] = GeometryPoint(latitude: newPos.latitude, longitude: newPos.longitude, z: _points[i].z);
+            _rebuildMapElements();
+          });
+        },
       ));
     }
 
@@ -273,10 +328,15 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
     _polylines.addAll(_contextPolylines);
     
     if (_points.length > 1) {
+      List<GeometryPoint> routePoints = _points;
+      if (_points.length > 2) {
+        routePoints = _catmullRomSpline(_points, _curveSharpness);
+      }
+      
       _polylines.add(Polyline(
         polylineId: const PolylineId('segment_line'),
-        points: _points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-        color: Colors.blueAccent,
+        points: routePoints.map((p) => LatLng(p.latitude, p.longitude)).toList(),
+        color: Colors.pinkAccent,
         width: 5,
         zIndex: 10,
       ));
@@ -303,6 +363,9 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
     String? startNvtId;
     String? endNvtId;
     String? connectedPopId;
+    
+    DateTime? plannedStartDate;
+    DateTime? plannedEndDate;
     
     bool isSaving = false;
 
@@ -431,6 +494,65 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final selected = await showDatePicker(
+                                    context: sheetContext,
+                                    initialDate: plannedStartDate ?? DateTime.now(),
+                                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                                  );
+                                  if (selected != null) {
+                                    setSheetState(() => plannedStartDate = selected);
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: InputDecoration(
+                                    labelText: 'Start Date',
+                                    labelStyle: const TextStyle(color: Color(0xFF8A8F98)),
+                                    enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white24), borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: Text(
+                                    plannedStartDate != null ? '${plannedStartDate!.year}-${plannedStartDate!.month.toString().padLeft(2, '0')}-${plannedStartDate!.day.toString().padLeft(2, '0')}' : 'Select Date',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final selected = await showDatePicker(
+                                    context: sheetContext,
+                                    initialDate: plannedEndDate ?? plannedStartDate ?? DateTime.now(),
+                                    firstDate: plannedStartDate ?? DateTime.now().subtract(const Duration(days: 365)),
+                                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                                  );
+                                  if (selected != null) {
+                                    setSheetState(() => plannedEndDate = selected);
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: InputDecoration(
+                                    labelText: 'End Date',
+                                    labelStyle: const TextStyle(color: Color(0xFF8A8F98)),
+                                    enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white24), borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: Text(
+                                    plannedEndDate != null ? '${plannedEndDate!.year}-${plannedEndDate!.month.toString().padLeft(2, '0')}-${plannedEndDate!.day.toString().padLeft(2, '0')}' : 'Select Date',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
                         
                         DropdownButtonFormField<String?>(
                           value: assignedCrewId,
@@ -529,7 +651,12 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                               }
                               setSheetState(() => isSaving = true);
                               try {
-                                final geometry = _points.map((p) => {
+                                List<GeometryPoint> savePoints = _points;
+                                if (_points.length > 2) {
+                                  savePoints = _catmullRomSpline(_points, _curveSharpness);
+                                }
+                                
+                                final geometry = savePoints.map((p) => {
                                   "lat": p.latitude,
                                   "lng": p.longitude,
                                   "z": p.z ?? 0.0
@@ -552,6 +679,8 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                                   "startLongitude": _points.first.longitude,
                                   "endLatitude": _points.last.latitude,
                                   "endLongitude": _points.last.longitude,
+                                  "plannedStartDate": plannedStartDate != null ? '${plannedStartDate!.year}-${plannedStartDate!.month.toString().padLeft(2, '0')}-${plannedStartDate!.day.toString().padLeft(2, '0')}' : null,
+                                  "plannedEndDate": plannedEndDate != null ? '${plannedEndDate!.year}-${plannedEndDate!.month.toString().padLeft(2, '0')}-${plannedEndDate!.day.toString().padLeft(2, '0')}' : null,
                                   "geometry": geometry
                                 };
                                 
@@ -569,11 +698,21 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                                 this.context.pop(); 
                               } catch (e) {
                                 print('Save segment error: $e');
-                                Navigator.pop(sheetContext); 
-                                ScaffoldMessenger.of(this.context).showSnackBar(
-                                  SnackBar(content: Text('Segment Created Locally (Backend err: $e)'), backgroundColor: Colors.orange),
-                                );
-                                this.context.pop();
+                                String errorMsg = e.toString();
+                                if (errorMsg.contains('currently busy')) {
+                                  // This is a validation error from the backend. Show a red toaster and DO NOT close the sheet.
+                                  String cleanMsg = errorMsg.replaceAll('Exception: ', '');
+                                  ScaffoldMessenger.of(this.context).showSnackBar(
+                                    SnackBar(content: Text(cleanMsg), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 5)),
+                                  );
+                                } else {
+                                  // Generic error, assume offline
+                                  Navigator.pop(sheetContext); 
+                                  ScaffoldMessenger.of(this.context).showSnackBar(
+                                    SnackBar(content: Text('Segment Created Locally (Backend err: $errorMsg)'), backgroundColor: Colors.orange),
+                                  );
+                                  this.context.pop();
+                                }
                               } finally {
                                 setSheetState(() => isSaving = false);
                               }
@@ -698,68 +837,103 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                               ),
                             ],
                           ),
-                          Text(
-                            'Total: ${_getTotalLength().toStringAsFixed(2)}m',
-                            style: const TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                          Row(
+                            children: [
+                              Text(
+                                'Total: ${_getTotalLength().toStringAsFixed(2)}m',
+                                style: const TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: () => setState(() => _isVectorAnalyticsExpanded = !_isVectorAnalyticsExpanded),
+                                child: Icon(
+                                  _isVectorAnalyticsExpanded ? Icons.expand_less : Icons.expand_more,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 150),
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _points.length - 1,
-                          itemBuilder: (context, index) {
-                            final p1 = _points[index];
-                            final p2 = _points[index + 1];
-                            
-                            final distanceStr = _calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
-                            
-                            double slope = 0.0;
-                            if (distanceStr > 0 && p1.z != null && p2.z != null) {
-                                slope = ((p2.z! - p1.z!) / distanceStr) * 100;
-                            }
-                            
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4.0),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.pinkAccent.withOpacity(0.2),
-                                      border: Border.all(color: Colors.pinkAccent.withOpacity(0.5)),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text('V${index + 1}', style: const TextStyle(color: Colors.pinkAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                                  ),
-                                  Text('${distanceStr.toStringAsFixed(2)}m', style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace')),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        slope == 0 ? '0.00%' : (slope > 0 ? '▲ ${slope.toStringAsFixed(2)}%' : '▼ ${(-slope).toStringAsFixed(2)}%'),
-                                        style: TextStyle(
-                                          color: slope == 0 ? Colors.white70 : (slope > 0 ? Colors.greenAccent : Colors.redAccent),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'monospace'
-                                        ),
-                                      ),
-                                      Text(
-                                        'Z1: ${p1.z?.toStringAsFixed(1) ?? '0.0'}m, Z2: ${p2.z?.toStringAsFixed(1) ?? '0.0'}m',
-                                        style: const TextStyle(color: Colors.white54, fontSize: 9, fontFamily: 'monospace'),
-                                      )
-                                    ],
-                                  ),
-                                ],
+                      if (_isVectorAnalyticsExpanded) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Text('Curve Sharpness (R):', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                            Expanded(
+                              child: Slider(
+                                value: _curveSharpness,
+                                min: 0.1,
+                                max: 1.5,
+                                activeColor: Colors.pinkAccent,
+                                onChanged: (val) {
+                                  setState(() {
+                                    _curveSharpness = val;
+                                    _rebuildMapElements();
+                                  });
+                                },
                               ),
-                            );
-                          },
+                            ),
+                            Text(_curveSharpness.toStringAsFixed(2), style: const TextStyle(color: Colors.pinkAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                          ],
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _points.length - 1,
+                            itemBuilder: (context, index) {
+                              final p1 = _points[index];
+                              final p2 = _points[index + 1];
+                              
+                              final distanceStr = _calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
+                              
+                              double slope = 0.0;
+                              if (distanceStr > 0 && p1.z != null && p2.z != null) {
+                                  slope = ((p2.z! - p1.z!) / distanceStr) * 100;
+                              }
+                              
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.pinkAccent.withOpacity(0.2),
+                                        border: Border.all(color: Colors.pinkAccent.withOpacity(0.5)),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text('V${index + 1}', style: const TextStyle(color: Colors.pinkAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ),
+                                    Text('${distanceStr.toStringAsFixed(2)}m', style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace')),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          slope == 0 ? '0.00%' : (slope > 0 ? '▲ ${slope.toStringAsFixed(2)}%' : '▼ ${(-slope).toStringAsFixed(2)}%'),
+                                          style: TextStyle(
+                                            color: slope == 0 ? Colors.white70 : (slope > 0 ? Colors.greenAccent : Colors.redAccent),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            fontFamily: 'monospace'
+                                          ),
+                                        ),
+                                        Text(
+                                          'Z1: ${p1.z?.toStringAsFixed(1) ?? '0.0'}m, Z2: ${p2.z?.toStringAsFixed(1) ?? '0.0'}m',
+                                          style: const TextStyle(color: Colors.white54, fontSize: 9, fontFamily: 'monospace'),
+                                        )
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ]
                     ],
                   ),
                 ),

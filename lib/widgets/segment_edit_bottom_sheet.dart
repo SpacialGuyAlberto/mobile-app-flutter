@@ -161,37 +161,17 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
 
         if (response.statusCode == 409) {
           final errorData = jsonDecode(response.body);
-          if (errorData['error'] == 'CREW_BUSY') {
+          if (errorData['error'] == 'CREW_BUSY' || (errorData['message'] != null && errorData['message'].toString().contains('busy'))) {
             if (mounted) {
               setState(() => _isLoading = false);
-              final schedule = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  backgroundColor: const Color(0xFF1C1D21),
-                  title: const Text('Crew is Busy', style: TextStyle(color: Colors.white)),
-                  content: Text(errorData['message'] ?? 'Crew is currently busy.', style: const TextStyle(color: Colors.white70)),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('CANCEL', style: TextStyle(color: Colors.white54)),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('SCHEDULE', style: TextStyle(color: Color(0xFF6938EF), fontWeight: FontWeight.bold)),
-                    ),
-                  ],
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(errorData['message'] ?? 'Crew is currently busy.'),
+                  backgroundColor: Colors.redAccent,
+                  duration: const Duration(seconds: 5),
                 ),
               );
-
-              if (schedule == true) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Crew scheduled successfully for later'), backgroundColor: Colors.green),
-                  );
-                  widget.onSaved();
-                  Navigator.pop(context);
-                }
-              }
               return;
             }
           }
@@ -203,7 +183,21 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
             widget.onSaved();
             Navigator.pop(context);
           }
+        } else if (response.statusCode >= 400) {
+          final errorData = jsonDecode(response.body);
+          String backendMsg = errorData['message'] ?? errorData['error'] ?? 'Server returned ${response.statusCode}';
+          if (backendMsg.contains('busy')) {
+             if (mounted) {
+                setState(() => _isLoading = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(backendMsg), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 5)),
+                );
+                return;
+             }
+          }
+          throw Exception(backendMsg);
         } else {
+          // Success case fallback if no ID or other condition, though it should be handled above
           throw Exception('Server returned ${response.statusCode}');
         }
       } else {

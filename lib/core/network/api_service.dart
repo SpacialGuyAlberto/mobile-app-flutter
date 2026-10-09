@@ -65,7 +65,20 @@ class ApiService {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body);
     } else {
-      throw Exception('Failed to post data to $endpoint. Status code: ${response.statusCode}');
+      String errMsg = 'Status code: ${response.statusCode}';
+      try {
+        final errorBody = jsonDecode(response.body);
+        if (errorBody['message'] != null) {
+          errMsg = errorBody['message'];
+        } else if (errorBody['error'] != null) {
+          errMsg = errorBody['error'];
+        } else {
+          errMsg = response.body;
+        }
+      } catch (e) {
+        errMsg = response.body;
+      }
+      throw Exception(errMsg);
     }
   }
 }
