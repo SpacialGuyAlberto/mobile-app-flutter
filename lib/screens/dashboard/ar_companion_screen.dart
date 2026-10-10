@@ -78,13 +78,19 @@ class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(
-              onPressed: () {
+              onPressed: () async {
                 if (state.isBroadcasting) {
                   ref.read(arCompanionProvider.notifier).stopBroadcasting();
                 } else {
                   final ip = _ipController.text;
                   final port = int.tryParse(_portController.text) ?? 8000;
-                  ref.read(arCompanionProvider.notifier).startBroadcasting(ip, port);
+                  final error = await ref.read(arCompanionProvider.notifier).startBroadcasting(ip, port);
+                  if (error != null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(error),
+                      backgroundColor: Colors.red,
+                    ));
+                  }
                 }
               },
               icon: Icon(

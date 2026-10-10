@@ -9,6 +9,8 @@ class InteractiveMapView extends StatelessWidget {
   final CameraPosition initialCameraPosition;
   final void Function(GoogleMapController)? onMapCreated;
   final void Function(LatLng)? onTap;
+  final bool myLocationEnabled;
+  final bool myLocationButtonEnabled;
 
   const InteractiveMapView({
     Key? key,
@@ -20,6 +22,8 @@ class InteractiveMapView extends StatelessWidget {
     ),
     this.onMapCreated,
     this.onTap,
+    this.myLocationEnabled = false,
+    this.myLocationButtonEnabled = false,
   }) : super(key: key);
 
   @override
@@ -39,7 +43,8 @@ class InteractiveMapView extends StatelessWidget {
           markers: markers,
           polylines: polylines,
           onTap: onTap,
-          myLocationEnabled: false,
+          myLocationEnabled: myLocationEnabled,
+          myLocationButtonEnabled: myLocationButtonEnabled,
           mapType: MapType.hybrid, // Hybrid works well for dark themes in construction
           compassEnabled: false,
           mapToolbarEnabled: false,

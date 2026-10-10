@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:geolocator/geolocator.dart';
 import 'dart:math' show cos, sqrt, asin;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -40,6 +41,7 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
   List<dynamic> _netzverteilers = [];
   
   late CameraPosition _initialCamera;
+  bool _hasLocationPermission = false;
 
   @override
   void initState() {
@@ -52,6 +54,35 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
     
     _loadProjectLocation();
     _loadMetadata();
+    _requestLocationPermission();
+  }
+
+  Future<void> _requestLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return;
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    } 
+
+    if (mounted) {
+      setState(() {
+        _hasLocationPermission = true;
+      });
+    }
   }
 
   List<dynamic> _pops = [];
@@ -649,6 +680,15 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                                 ScaffoldMessenger.of(sheetContext).showSnackBar(const SnackBar(content: Text('Street Name is required')));
                                 return;
                               }
+                              
+                              if (plannedStartDate != null && plannedEndDate != null && plannedStartDate!.isAfter(plannedEndDate!)) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(const SnackBar(
+                                  content: Text('Error: Start date must be before or equal to End date.'),
+                                  backgroundColor: Colors.redAccent,
+                                ));
+                                return;
+                              }
+
                               setSheetState(() => isSaving = true);
                               try {
                                 List<GeometryPoint> savePoints = _points;
@@ -791,7 +831,8 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
             onTap: _onMapTapped,
             markers: _markers,
             polylines: _polylines,
-            myLocationEnabled: true,
+            myLocationEnabled: _hasLocationPermission,
+            myLocationButtonEnabled: _hasLocationPermission,
             mapType: MapType.hybrid,
           ),
           if (_points.isEmpty)

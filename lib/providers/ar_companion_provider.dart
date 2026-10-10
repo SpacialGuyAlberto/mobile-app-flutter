@@ -72,11 +72,11 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
 
   Timer? _heartbeatTimer;
 
-  Future<void> startBroadcasting(String ip, int port) async {
+  Future<String?> startBroadcasting(String ip, int port) async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       state = state.copyWith(lastMessage: 'Location services are disabled.');
-      return;
+      return 'Location services are disabled. Please enable GPS.';
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
@@ -84,13 +84,13 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         state = state.copyWith(lastMessage: 'Location permissions are denied');
-        return;
+        return 'Location permissions are denied. Cannot broadcast GPS.';
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
       state = state.copyWith(lastMessage: 'Location permissions are permanently denied, we cannot request permissions.');
-      return;
+      return 'Location permissions are permanently denied. Please enable them in Settings.';
     }
 
     try {
@@ -117,8 +117,10 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
         }
       });
       
+      return null;
     } catch (e) {
       state = state.copyWith(lastMessage: 'Failed to bind socket: $e');
+      return 'Failed to start broadcasting: $e';
     }
   }
 

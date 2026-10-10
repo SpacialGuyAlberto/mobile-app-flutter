@@ -22,7 +22,7 @@ import '../../widgets/segment_edit_bottom_sheet.dart';
 import '../bauleiter/crew_detail_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/ar_companion_provider.dart';
-
+import 'package:geolocator/geolocator.dart';
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
   final String clusterId;
@@ -70,13 +70,43 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   bool _isOffline = false;
   File? _offlineMapFile;
   bool _isDownloading = false;
+  bool _hasLocationPermission = false;
 
   @override
   void initState() {
     super.initState();
     _checkOfflineStatus();
+    _requestLocationPermission();
     _initCustomIcons();
     _loadClusterData();
+  }
+
+  Future<void> _requestLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return;
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    } 
+
+    if (mounted) {
+      setState(() {
+        _hasLocationPermission = true;
+      });
+    }
   }
 
   Future<void> _checkOfflineStatus() async {
@@ -789,6 +819,8 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
             initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
             onTap: _onMapTapped,
             onMapCreated: (controller) => _mapController = controller,
+            myLocationEnabled: _hasLocationPermission,
+            myLocationButtonEnabled: _hasLocationPermission,
           ),
           
         if (_isOffline && _offlineMapFile != null)
@@ -821,7 +853,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                     heroTag: 'arCompanionBtn',
                     mini: true,
                     backgroundColor: arState.isBroadcasting ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
-                    onPressed: () {
+                    onPressed: () async {
                       final notifier = ref.read(arCompanionProvider.notifier);
                       // Asignar el ID de proyecto actual (parseado a int)
                       int? projId = int.tryParse(widget.projectId);
@@ -830,7 +862,13 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                       if (arState.isBroadcasting) {
                         notifier.stopBroadcasting();
                       } else {
-                        notifier.startBroadcasting(arState.targetIp, arState.targetPort);
+                        final error = await notifier.startBroadcasting(arState.targetIp, arState.targetPort);
+                        if (error != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(error),
+                            backgroundColor: Colors.red,
+                          ));
+                        }
                       }
                     },
                     child: Icon(
