@@ -652,9 +652,8 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
                               setSheetState(() => isSaving = true);
                               try {
                                 List<GeometryPoint> savePoints = _points;
-                                if (_points.length > 2) {
-                                  savePoints = _catmullRomSpline(_points, _curveSharpness);
-                                }
+                                // We NO LONGER interpolate the points for the backend.
+                                // We send the raw nodes, avoiding memory overflows in Unity AR due to too many vectors.
                                 
                                 final geometry = savePoints.map((p) => {
                                   "lat": p.latitude,

@@ -38,7 +38,7 @@ class _BauleiterMapScreenState extends State<BauleiterMapScreen> {
     try {
       var request = http.MultipartRequest(
         'POST', 
-        Uri.parse('http://192.168.178.57:8080/api/v1/planning/segment-recognition/process-raster')
+        Uri.parse('http://fedora.fritz.box:8080/api/v1/planning/segment-recognition/process-raster')
       );
       
       request.files.add(await http.MultipartFile.fromPath('file', image.path));

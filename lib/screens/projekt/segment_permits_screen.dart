@@ -26,7 +26,7 @@ class _SegmentPermitsScreenState extends State<SegmentPermitsScreen> {
   Future<void> _fetchPermits() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse('http://192.168.178.57:8080/api/v1/segments/${widget.segmentId}/permits'));
+      final response = await http.get(Uri.parse('http://fedora.fritz.box:8080/api/v1/segments/${widget.segmentId}/permits'));
       if (response.statusCode == 200) {
         setState(() {
           _permits = jsonDecode(response.body);
@@ -50,7 +50,7 @@ class _SegmentPermitsScreenState extends State<SegmentPermitsScreen> {
         setState(() => _isUploading = true);
         var request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.178.57:8080/api/v1/segments/${widget.segmentId}/permits'),
+          Uri.parse('http://fedora.fritz.box:8080/api/v1/segments/${widget.segmentId}/permits'),
         );
         request.files.add(await http.MultipartFile.fromPath('file', result.files.single.path!));
         var response = await request.send();
@@ -112,9 +112,9 @@ class _SegmentPermitsScreenState extends State<SegmentPermitsScreen> {
                         itemCount: _permits.length,
                         itemBuilder: (context, index) {
                           final permit = _permits[index];
-                          // Map 192.168.178.57 to Android Emulator local IP if needed
-                          final pdfUrl = permit['pdfUrl']?.toString().replaceAll('192.168.178.57', '192.168.178.57');
-                          final previewUrl = permit['previewImageUrl']?.toString().replaceAll('192.168.178.57', '192.168.178.57');
+                          // Map fedora.fritz.box to Android Emulator local IP if needed
+                          final pdfUrl = permit['pdfUrl']?.toString().replaceAll('fedora.fritz.box', 'fedora.fritz.box');
+                          final previewUrl = permit['previewImageUrl']?.toString().replaceAll('fedora.fritz.box', 'fedora.fritz.box');
                           return Card(
                             color: const Color(0xFF1C1D21),
                             shape: RoundedRectangleBorder(
