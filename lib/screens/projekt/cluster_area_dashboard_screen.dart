@@ -109,6 +109,32 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
     }
   }
 
+  Future<void> _centerToMyLocation() async {
+    if (_mapController == null) return;
+    if (!_hasLocationPermission) {
+      await _requestLocationPermission();
+      if (!_hasLocationPermission) return;
+    }
+    
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high
+      );
+      
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(position.latitude, position.longitude),
+            zoom: 18.0,
+            tilt: is3DMode ? 60.0 : 0.0,
+          )
+        )
+      );
+    } catch (e) {
+      print('Error getting location: $e');
+    }
+  }
+
   Future<void> _checkOfflineStatus() async {
     bool offline = false;
     try {
@@ -878,6 +904,14 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                     ),
                   );
                 }
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton(
+                heroTag: 'locateMeBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: _centerToMyLocation,
+                child: const Icon(Icons.my_location, color: Colors.blueAccent, size: 20),
               ),
               const SizedBox(height: 12),
               FloatingActionButton(
