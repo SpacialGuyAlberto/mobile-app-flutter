@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../models/notification_message.dart';
@@ -60,10 +59,21 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
           }
         }, onError: (error) {
           print("SSE Error: $error");
-        }, cancelOnError: false);
+          _retryConnecting();
+        }, onDone: () {
+          print("SSE Stream closed, reconnecting...");
+          _retryConnecting();
+        }, cancelOnError: true);
     } catch (e) {
       print("Could not connect to SSE stream: $e");
+      _retryConnecting();
     }
+  }
+
+  void _retryConnecting() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) _startListening();
+    });
   }
 
   void _handleNewNotification(NotificationMessage message) {

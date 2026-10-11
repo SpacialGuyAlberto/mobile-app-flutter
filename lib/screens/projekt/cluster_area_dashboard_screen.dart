@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' hide Cluster;
 import 'package:url_launcher/url_launcher.dart';
+import '../../providers/ar_companion_provider.dart';
 import 'cluster_dashboard/utilities/utility_map_renderer.dart';
 
 import '../../core/services/location_service.dart';
@@ -23,7 +26,6 @@ import 'cluster_dashboard/utilities/utility_info_sheet.dart';
 import 'cluster_dashboard/utilities/utility_repository.dart';
 import 'cluster_dashboard/utils/cluster_map_object_builder.dart';
 import 'cluster_dashboard/widgets/add_node_type_sheet.dart';
-import 'cluster_dashboard/widgets/cluster_map_controls.dart';
 import 'cluster_dashboard/widgets/cluster_node_accordion.dart';
 import 'cluster_dashboard/widgets/cluster_stats_grid.dart';
 import 'cluster_dashboard/widgets/crew_info_sheet.dart';
@@ -495,8 +497,8 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           Consumer(
             builder: (context, ref, child) {
               final arState = ref.watch(arCompanionProvider);
-              Set<Marker> finalMarkers = Set.from(_markers);
-              Set<Polyline> finalPolylines = Set.from(_polylines);
+              Set<Marker> finalMarkers = Set.from(_mapData.markers);
+              Set<Polyline> finalPolylines = Set.from(_mapData.polylines);
               
               if (arState.isBroadcasting && arState.currentLat != null && arState.currentLng != null && arState.currentHeading != null) {
                 // Dibujar un pin azul claro
@@ -508,7 +510,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                     icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
                     infoWindow: InfoWindow(title: 'Tú', snippet: 'Brújula: ${arState.currentHeading!.toStringAsFixed(1)}°'),
                     anchor: const Offset(0.5, 0.5),
-                    zIndex: 9999,
+                    zIndexInt: 9999,
                   ),
                 );
 
@@ -539,9 +541,21 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
               return InteractiveMapView(
                 markers: finalMarkers,
                 polylines: finalPolylines,
-                initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+                initialCameraPosition: _mapData.initialCamera ?? CameraPosition(
+                  target: _clusterCenter ?? const LatLng(52.52, 13.40),
+                  zoom: _clusterCenter != null ? 16 : 12,
+                ),
                 onTap: _onMapTapped,
-                onMapCreated: (controller) => _mapController = controller,
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                  if (_clusterCenter != null) {
+                    controller.animateCamera(
+                      CameraUpdate.newCameraPosition(
+                        CameraPosition(target: _clusterCenter!, zoom: 16.0),
+                      ),
+                    );
+                  }
+                },
                 myLocationEnabled: _hasLocationPermission,
                 myLocationButtonEnabled: _hasLocationPermission,
               );

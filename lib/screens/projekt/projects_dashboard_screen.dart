@@ -1,16 +1,13 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../../widgets/glass_card.dart';
-import '../../widgets/interactive_map_view.dart';
 import '../../core/network/api_service.dart';
 import '../../models/planning/project.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/ar_companion_provider.dart';
+import '../../core/config/env_config.dart';
 
 class ProjectsDashboardScreen extends ConsumerStatefulWidget {
   const ProjectsDashboardScreen({Key? key}) : super(key: key);
@@ -22,6 +19,7 @@ class ProjectsDashboardScreen extends ConsumerStatefulWidget {
 class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScreen> {
   String selectedProject = 'All Projects';
   bool _isLoading = true;
+  String? _loadError;
   List<Project> _projects = [];
   Set<Marker> _markers = {};
 
@@ -34,7 +32,10 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
   }
 
   Future<void> _loadProjects() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       final api = ApiService();
       final data = await api.get('/projects');
@@ -59,12 +60,16 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
           _projects = projects;
           _markers = markers;
           _isLoading = false;
+          _loadError = null;
         });
       }
     } catch (e) {
       print('Error loading projects: $e');
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _loadError = e.toString();
+        });
       }
     }
   }
@@ -118,27 +123,40 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
                   ),
                 ],
                 const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: isTesting ? null : () async {
-                    setDialogState(() {
-                      isTesting = true;
-                      statusMessage = 'Probando candidatos de conexión...';
-                    });
-                    final detected = await ApiService.autoDetectWorkingBaseUrl();
-                    setDialogState(() {
-                      isTesting = false;
-                      if (detected != null) {
-                        controller.text = detected;
-                        statusMessage = 'Conectado exitosamente con $detected';
-                      } else {
-                        statusMessage = 'Error: Ningún candidato respondió.';
-                      }
-                    });
-                  },
-                  icon: isTesting 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) 
-                      : const Icon(Icons.autorenew, size: 16, color: Color(0xFF6938ef)),
-                  label: const Text('Auto-Detectar Conexión', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: isTesting ? null : () async {
+                          setDialogState(() {
+                            isTesting = true;
+                            statusMessage = 'Probando candidatos de conexión...';
+                          });
+                          final detected = await ApiService.autoDetectWorkingBaseUrl();
+                          setDialogState(() {
+                            isTesting = false;
+                            if (detected != null) {
+                              controller.text = detected;
+                              statusMessage = 'Conectado exitosamente con $detected';
+                            } else {
+                              statusMessage = 'Error: Ningún candidato respondió.';
+                            }
+                          });
+                        },
+                        icon: isTesting 
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) 
+                            : const Icon(Icons.autorenew, size: 16, color: Color(0xFF6938ef)),
+                        label: const Text('Auto-Detectar', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: () {
+                        controller.text = EnvConfig.backendUrl;
+                      },
+                      child: const Text('Usar .env', style: TextStyle(color: Color(0xFF6938ef), fontSize: 11)),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -248,7 +266,7 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
 
     final projId = int.tryParse(project.id);
     if (projId != null) {
-      ref.read(arCompanionProvider.notifier).setProjectId(projId);
+      ref.read(arCompanionProvider.notifier).setProjectId(projId, project.name);
     }
 
     if (project.geometry.isNotEmpty && _mapController != null) {
@@ -298,6 +316,8 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
                         _buildConstructionHealth(),
                         const SizedBox(height: 32),
                         _buildOtherProjectsList(),
+                      ] else ...[
+                        _buildEmptyOrErrorCard(),
                       ],
                       const SizedBox(height: 80),
                     ],
@@ -391,6 +411,114 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildEmptyOrErrorCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1D21),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6938ef).withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.wifi_off_rounded, color: Color(0xFF6938ef), size: 24),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'No se encontraron proyectos',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Problema de conexión con el backend',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131415),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.link, size: 16, color: Colors.white38),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    ApiService.baseUrl,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_loadError != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _loadError!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6938ef),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    setState(() => _isLoading = true);
+                    await ApiService.autoDetectWorkingBaseUrl();
+                    await _loadProjects();
+                  },
+                  icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
+                  label: const Text('Auto-Detectar y Reintentar', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.white24),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                ),
+                onPressed: _showServerConfigDialog,
+                icon: const Icon(Icons.settings, size: 16, color: Colors.white70),
+                label: const Text('Config', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

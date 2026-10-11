@@ -14,6 +14,8 @@ dependencies:
   go_router: ^12.1.1
   google_fonts: ^6.1.0
   google_maps_flutter: ^2.5.3
+  google_maps_flutter_android: ^2.19.13
+  google_maps_flutter_platform_interface: ^2.6.0
   image_picker: ^1.1.2
   sqflite: ^2.4.1
   path: ^1.9.0

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/ar_companion_provider.dart';
-import '../../core/network/api_service.dart';
+import '../../core/config/env_config.dart';
 
 class ARCompanionScreen extends ConsumerStatefulWidget {
   const ARCompanionScreen({Key? key}) : super(key: key);
@@ -13,13 +13,19 @@ class ARCompanionScreen extends ConsumerStatefulWidget {
 
 class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
   late final TextEditingController _ipController;
-  final _portController = TextEditingController(text: '8000');
+  late final TextEditingController _portController;
 
   @override
   void initState() {
     super.initState();
     final currentTarget = ref.read(arCompanionProvider).targetIp;
-    _ipController = TextEditingController(text: currentTarget.isNotEmpty ? currentTarget : '172.20.10.5');
+    final currentPort = ref.read(arCompanionProvider).targetPort;
+    _ipController = TextEditingController(
+      text: currentTarget.isNotEmpty ? currentTarget : EnvConfig.glassesIp,
+    );
+    _portController = TextEditingController(
+      text: currentPort > 0 ? currentPort.toString() : EnvConfig.headsetPort.toString(),
+    );
   }
 
   @override
@@ -39,7 +45,7 @@ class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
         backgroundColor: Colors.black,
       ),
       backgroundColor: const Color(0xFF111827),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -54,10 +60,59 @@ class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'This screen will read high-precision GPS data from your phone and stream it in real-time over the local network via UDP to the Unreal Engine application running on the AR headset.',
+              'Transmite en tiempo real el GPS y orientación de tu teléfono por red local (UDP) a las gafas Quest 3.',
               style: TextStyle(color: Colors.grey),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F2937),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.tune, color: Color(0xFF6938EF), size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'Configuración de Red (.env)',
+                            style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: state.isBroadcasting
+                            ? null
+                            : () {
+                                _ipController.text = EnvConfig.glassesIp;
+                                _portController.text = EnvConfig.headsetPort.toString();
+                              },
+                        child: const Text('Usar .env', style: TextStyle(color: Color(0xFF6938EF), fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('💻 Laptop / Backend: ${EnvConfig.laptopIp}:${EnvConfig.backendPort}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text('🥽 Gafas AR (Quest 3): ${EnvConfig.glassesIp}:${EnvConfig.headsetPort}',
+                      style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
             TextField(
               controller: _ipController,
               enabled: !state.isBroadcasting,
@@ -90,8 +145,9 @@ class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
                 if (state.isBroadcasting) {
                   ref.read(arCompanionProvider.notifier).stopBroadcasting();
                 } else {
-                  final ip = _ipController.text;
-                  final port = int.tryParse(_portController.text) ?? 8000;
+                  final ip = _ipController.text.trim();
+                  final port = int.tryParse(_portController.text.trim()) ?? EnvConfig.headsetPort;
+                  await ref.read(arCompanionProvider.notifier).saveConfig(ip, port);
                   final error = await ref.read(arCompanionProvider.notifier).startBroadcasting(ip, port);
                   if (error != null && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(

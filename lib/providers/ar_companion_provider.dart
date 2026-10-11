@@ -19,6 +19,7 @@ class ARCompanionState {
   final int targetPort;
   final String lastMessage;
   final int? projectId;
+  final String? projectName;
   final double? currentLat;
   final double? currentLng;
   final double? currentHeading;
@@ -30,6 +31,7 @@ class ARCompanionState {
     this.targetPort = 8000,
     this.lastMessage = '',
     this.projectId,
+    this.projectName,
     this.currentLat,
     this.currentLng,
     this.currentHeading,
@@ -42,6 +44,7 @@ class ARCompanionState {
     int? targetPort,
     String? lastMessage,
     int? projectId,
+    String? projectName,
     double? currentLat,
     double? currentLng,
     double? currentHeading,
@@ -53,6 +56,7 @@ class ARCompanionState {
       targetPort: targetPort ?? this.targetPort,
       lastMessage: lastMessage ?? this.lastMessage,
       projectId: projectId ?? this.projectId,
+      projectName: projectName ?? this.projectName,
       currentLat: currentLat ?? this.currentLat,
       currentLng: currentLng ?? this.currentLng,
       currentHeading: currentHeading ?? this.currentHeading,
@@ -108,8 +112,8 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
   double _lastCompassHeading = 0.0;
   bool _forceCalibrationFlag = false;
 
-  void setProjectId(int? id) {
-    state = state.copyWith(projectId: id);
+  void setProjectId(int? id, [String? name]) {
+    state = state.copyWith(projectId: id, projectName: name);
   }
 
   Future<void> _fetchGoogleElevation(double lat, double lng) async {
@@ -245,6 +249,7 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
       'accuracy': position.accuracy,
       'timestamp': DateTime.now().toIso8601String(),
       'projectId': state.projectId,
+      'projectName': state.projectName,
       'forceCalibration': _forceCalibrationFlag,
       'manualRotation': state.manualRotationOffset,
     };
