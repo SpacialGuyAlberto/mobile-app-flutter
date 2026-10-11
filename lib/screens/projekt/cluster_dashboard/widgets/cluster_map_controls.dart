@@ -5,6 +5,7 @@ import '../../../../providers/ar_companion_provider.dart';
 /// Floating action buttons and overlays on top of the interactive map (SRP compliant).
 class ClusterMapControls extends StatelessWidget {
   final String projectId;
+  final String? projectName;
   final bool is3DMode;
   final bool isPanelVisible;
   final bool isOffline;
@@ -23,6 +24,7 @@ class ClusterMapControls extends StatelessWidget {
   const ClusterMapControls({
     super.key,
     required this.projectId,
+    this.projectName,
     required this.is3DMode,
     required this.isPanelVisible,
     required this.isOffline,
@@ -79,7 +81,7 @@ class ClusterMapControls extends StatelessWidget {
                     onPressed: () async {
                       final notifier = ref.read(arCompanionProvider.notifier);
                       int? projId = int.tryParse(projectId);
-                      if (projId != null) notifier.setProjectId(projId);
+                      if (projId != null) notifier.setProjectId(projId, projectName);
 
                       if (arState.isBroadcasting) {
                         notifier.stopBroadcasting();

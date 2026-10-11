@@ -13,6 +13,7 @@ import '../../models/planning/enums/work_type.dart';
 import '../../models/planning/enums/workflow_state.dart';
 import '../../models/planning/geometry_point.dart';
 import '../../models/planning/infrastructure_elements.dart';
+import '../../models/planning/project.dart';
 import '../../models/planning/segment.dart';
 import '../../models/utility_models.dart';
 import '../../widgets/interactive_map_view.dart';
@@ -33,7 +34,7 @@ import 'cluster_dashboard/widgets/machinery_info_sheet.dart';
 import 'cluster_dashboard/widgets/save_node_bottom_sheet.dart';
 
 /// Screen coordinating cluster dashboard data, map visualizer, and operations (SOLID compliant).
-class ClusterAreaDashboardScreen extends StatefulWidget {
+class ClusterAreaDashboardScreen extends ConsumerStatefulWidget {
   final String projectId;
   final String clusterId;
   final double? initialLat;
@@ -58,10 +59,10 @@ class ClusterAreaDashboardScreen extends StatefulWidget {
   });
 
   @override
-  State<ClusterAreaDashboardScreen> createState() => _ClusterAreaDashboardScreenState();
+  ConsumerState<ClusterAreaDashboardScreen> createState() => _ClusterAreaDashboardScreenState();
 }
 
-class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen> {
+class _ClusterAreaDashboardScreenState extends ConsumerState<ClusterAreaDashboardScreen> {
   late final IClusterDashboardRepository _repository;
   late final IUtilityRepository _utilityRepository;
   late final ClusterOfflineMapService _offlineMapService;
@@ -69,6 +70,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   late final ClusterMapObjectBuilder _mapObjectBuilder;
 
   bool _isLoading = true;
+  Project? _project;
   List<Pop> _pops = [];
   List<Netzverteiler> _nvts = [];
   List<Segment> _segments = [];
@@ -202,6 +204,13 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
         _clusterCenter = LatLng(cluster!.latitude!, cluster.longitude!);
       } else {
         final project = await _repository.fetchProject(widget.projectId);
+        _project = project;
+        if (project != null) {
+          final projId = int.tryParse(widget.projectId);
+          if (projId != null) {
+            ref.read(arCompanionProvider.notifier).setProjectId(projId, project.name);
+          }
+        }
         if (project?.latitude != null && project?.longitude != null) {
           _clusterCenter = LatLng(project!.latitude!, project.longitude!);
         }
@@ -594,9 +603,9 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
                     backgroundColor: arState.isBroadcasting ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
                     onPressed: () async {
                       final notifier = ref.read(arCompanionProvider.notifier);
-                      // Asignar el ID de proyecto actual (parseado a int)
+                      // Asignar el ID de proyecto actual (parseado a int) y su nombre
                       int? projId = int.tryParse(widget.projectId);
-                      if (projId != null) notifier.setProjectId(projId);
+                      if (projId != null) notifier.setProjectId(projId, _project?.name);
                       
                       if (arState.isBroadcasting) {
                         notifier.stopBroadcasting();
