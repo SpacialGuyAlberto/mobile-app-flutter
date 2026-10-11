@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' hide Cluster;
@@ -492,51 +492,241 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
             child: Image.file(_offlineMapFile!, fit: BoxFit.cover, width: double.infinity, height: double.infinity),
           )
         else
-          InteractiveMapView(
-            markers: _mapData.markers,
-            polylines: _mapData.polylines,
-            initialCameraPosition: _mapData.initialCamera ?? CameraPosition(
-              target: _clusterCenter ?? const LatLng(52.52, 13.40),
-              zoom: _clusterCenter != null ? 16 : 12,
-            ),
-            onTap: _onMapTapped,
-            onMapCreated: (controller) {
-              _mapController = controller;
-              if (_clusterCenter != null) {
-                controller.animateCamera(
-                  CameraUpdate.newCameraPosition(
-                    CameraPosition(target: _clusterCenter!, zoom: 16.0),
+          Consumer(
+            builder: (context, ref, child) {
+              final arState = ref.watch(arCompanionProvider);
+              Set<Marker> finalMarkers = Set.from(_markers);
+              Set<Polyline> finalPolylines = Set.from(_polylines);
+              
+              if (arState.isBroadcasting && arState.currentLat != null && arState.currentLng != null && arState.currentHeading != null) {
+                // Dibujar un pin azul claro
+                finalMarkers.add(
+                  Marker(
+                    markerId: const MarkerId('my_heading_indicator'),
+                    position: LatLng(arState.currentLat!, arState.currentLng!),
+                    rotation: arState.currentHeading!,
+                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+                    infoWindow: InfoWindow(title: 'Tú', snippet: 'Brújula: ${arState.currentHeading!.toStringAsFixed(1)}°'),
+                    anchor: const Offset(0.5, 0.5),
+                    zIndex: 9999,
+                  ),
+                );
+
+                // Dibujar una línea (flecha) que apunta hacia donde mira el usuario
+                double lat1 = arState.currentLat! * math.pi / 180.0;
+                double lng1 = arState.currentLng! * math.pi / 180.0;
+                double brng = arState.currentHeading! * math.pi / 180.0;
+                double d = 40.0; // 40 metros de largo
+                double R = 6378137.0; // Radio de la tierra
+
+                double lat2 = math.asin(math.sin(lat1) * math.cos(d / R) + math.cos(lat1) * math.sin(d / R) * math.cos(brng));
+                double lng2 = lng1 + math.atan2(math.sin(brng) * math.sin(d / R) * math.cos(lat1), math.cos(d / R) - math.sin(lat1) * math.sin(lat2));
+
+                finalPolylines.add(
+                  Polyline(
+                    polylineId: const PolylineId('my_heading_line'),
+                    points: [
+                      LatLng(arState.currentLat!, arState.currentLng!),
+                      LatLng(lat2 * 180.0 / math.pi, lng2 * 180.0 / math.pi),
+                    ],
+                    color: Colors.cyanAccent,
+                    width: 6,
+                    zIndex: 9999,
                   ),
                 );
               }
-            },
-            myLocationEnabled: _hasLocationPermission,
-            myLocationButtonEnabled: _hasLocationPermission,
-          ),
 
-        ClusterMapControls(
-          projectId: widget.projectId,
-          is3DMode: is3DMode,
-          isPanelVisible: isPanelVisible,
-          isOffline: _isOffline,
-          isDownloading: _isDownloading,
-          isMapEditMode: isMapEditMode,
-          activeDrawTool: activeDrawTool,
-          onMyLocation: _centerToMyLocation,
-          onZoomIn: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
-          onZoomOut: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
-          onStreetView: _openStreetView,
-          onToggle3D: _toggle3D,
-          onTogglePanel: () => setState(() => isPanelVisible = !isPanelVisible),
-          onDownloadOfflineMap: _downloadOfflineMap,
-          onCancelDraw: () {
-            setState(() {
-              isMapEditMode = false;
-              activeDrawTool = null;
-              tempMarker = null;
-              _rebuildMap();
-            });
-          },
+              return InteractiveMapView(
+                markers: finalMarkers,
+                polylines: finalPolylines,
+                initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+                onTap: _onMapTapped,
+                onMapCreated: (controller) => _mapController = controller,
+                myLocationEnabled: _hasLocationPermission,
+                myLocationButtonEnabled: _hasLocationPermission,
+              );
+            },
+          ),
+          
+        if (_isOffline && _offlineMapFile != null)
+          Positioned(
+            top: 40,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+              child: const Row(
+                children: [
+                  Icon(Icons.wifi_off, color: Colors.orangeAccent, size: 16),
+                  SizedBox(width: 8),
+                  Text('MODO OFFLINE', style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+        
+        // Action Buttons on Map (3D and Panel Toggle)
+        Positioned(
+          top: 100,
+          right: 16,
+          child: Column(
+            children: [
+              Consumer(
+                builder: (context, ref, child) {
+                  final arState = ref.watch(arCompanionProvider);
+                  return FloatingActionButton(
+                    heroTag: 'arCompanionBtn',
+                    mini: true,
+                    backgroundColor: arState.isBroadcasting ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
+                    onPressed: () async {
+                      final notifier = ref.read(arCompanionProvider.notifier);
+                      // Asignar el ID de proyecto actual (parseado a int)
+                      int? projId = int.tryParse(widget.projectId);
+                      if (projId != null) notifier.setProjectId(projId);
+                      
+                      if (arState.isBroadcasting) {
+                        notifier.stopBroadcasting();
+                      } else {
+                        final error = await notifier.startBroadcasting(arState.targetIp, arState.targetPort);
+                        if (error != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(error),
+                            backgroundColor: Colors.red,
+                          ));
+                        }
+                      }
+                    },
+                    child: Icon(
+                      arState.isBroadcasting ? Icons.cast_connected : Icons.cast, 
+                      color: arState.isBroadcasting ? Colors.white : Colors.blueAccent, 
+                      size: 20
+                    ),
+                  );
+                }
+              ),
+              Consumer(
+                builder: (context, ref, child) {
+                  final isBroadcasting = ref.watch(arCompanionProvider.select((state) => state.isBroadcasting));
+                  if (!isBroadcasting) return const SizedBox.shrink();
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: FloatingActionButton(
+                      heroTag: 'forceCalibrateBtn',
+                      mini: true,
+                      backgroundColor: Colors.blueAccent,
+                      onPressed: () {
+                        ref.read(arCompanionProvider.notifier).forceCalibration();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Señal de calibración enviada a Unity')),
+                        );
+                      },
+                      child: const Icon(Icons.compass_calibration, color: Colors.white, size: 20),
+                    ),
+                  );
+                }
+              ),
+              Consumer(
+                builder: (context, ref, child) {
+                  final isBroadcasting = ref.watch(arCompanionProvider.select((state) => state.isBroadcasting));
+                  final manualRot = ref.watch(arCompanionProvider.select((state) => state.manualRotationOffset));
+                  if (!isBroadcasting) return const SizedBox.shrink();
+                  
+                  return Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                        child: Text('${manualRot > 0 ? '+' : ''}${manualRot.toInt()}°', style: const TextStyle(color: Colors.white, fontSize: 10)),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FloatingActionButton(
+                            heroTag: 'rotMinusBtn',
+                            mini: true,
+                            backgroundColor: Colors.grey[800],
+                            onPressed: () => ref.read(arCompanionProvider.notifier).adjustManualRotation(-15),
+                            child: const Icon(Icons.rotate_left, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 4),
+                          FloatingActionButton(
+                            heroTag: 'rotPlusBtn',
+                            mini: true,
+                            backgroundColor: Colors.grey[800],
+                            onPressed: () => ref.read(arCompanionProvider.notifier).adjustManualRotation(15),
+                            child: const Icon(Icons.rotate_right, color: Colors.white, size: 20),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton(
+                heroTag: 'locateMeBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: _centerToMyLocation,
+                child: const Icon(Icons.my_location, color: Colors.blueAccent, size: 20),
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton(
+                heroTag: 'zoomInBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
+                child: const Icon(Icons.add, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton(
+                heroTag: 'zoomOutBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
+                child: const Icon(Icons.remove, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 24),
+              FloatingActionButton(
+                heroTag: 'svBtn',
+                mini: true,
+                backgroundColor: const Color(0xFF1C1D21),
+                onPressed: _openStreetView,
+                child: const Icon(Icons.directions_walk, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton(
+                heroTag: '3dBtn',
+                mini: true,
+                backgroundColor: is3DMode ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
+                onPressed: _toggle3D,
+                child: const Icon(Icons.threed_rotation, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton(
+                heroTag: 'panelBtn',
+                mini: true,
+                backgroundColor: isPanelVisible ? const Color(0xFF1C1D21) : const Color(0xFF6938ef),
+                onPressed: () => setState(() => isPanelVisible = !isPanelVisible),
+                child: Icon(isPanelVisible ? Icons.visibility_off : Icons.visibility, color: Colors.white, size: 20),
+              ),
+              if (!_isOffline) ...[
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  heroTag: 'downloadMapBtn',
+                  mini: true,
+                  backgroundColor: _isDownloading ? Colors.grey : const Color(0xFF1C1D21),
+                  onPressed: _isDownloading ? null : _downloadOfflineMap,
+                  child: _isDownloading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.download_for_offline, color: Colors.greenAccent, size: 20),
+                ),
+              ],
+            ],
+          ),
         ),
 
         if (isPanelVisible)

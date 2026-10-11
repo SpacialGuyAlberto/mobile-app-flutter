@@ -114,6 +114,28 @@ class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                if (!state.isBroadcasting) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Primero inicia el Broadcasting GPS')),
+                  );
+                  return;
+                }
+                ref.read(arCompanionProvider.notifier).forceCalibration();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Señal de calibración forzada enviada a Unity')),
+                );
+              },
+              icon: const Icon(Icons.compass_calibration),
+              label: const Text('CALIBRAR CON UNITY'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16),
