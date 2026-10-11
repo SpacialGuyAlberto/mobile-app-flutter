@@ -13,6 +13,7 @@ import 'create_segment/services/create_segment_repository.dart';
 import 'create_segment/utils/segment_map_builder.dart';
 import 'create_segment/widgets/save_segment_bottom_sheet.dart';
 import 'create_segment/widgets/vector_analytics_card.dart';
+import 'cluster_dashboard/utils/cluster_map_object_builder.dart';
 
 /// Screen for interactive vector routing and segment creation (SOLID compliant).
 class CreateSegmentScreen extends StatefulWidget {
@@ -55,6 +56,8 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
   Set<Marker> _contextMarkers = {};
   Set<Polyline> _contextPolylines = {};
   SegmentMapElements _mapElements = const SegmentMapElements(markers: {}, polylines: {});
+  BitmapDescriptor? _popIcon;
+  BitmapDescriptor? _nvtIcon;
 
   @override
   void initState() {
@@ -68,7 +71,25 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
     );
 
     _checkLocationPermission();
-    _loadMetadata();
+    _loadCustomIconsAndMetadata();
+  }
+
+  Future<void> _loadCustomIconsAndMetadata() async {
+    try {
+      _popIcon = await ClusterMapObjectBuilder.createCustomMarker(
+        Icons.business,
+        const Color(0xFF6938EF),
+        'POP',
+      );
+      _nvtIcon = await ClusterMapObjectBuilder.createCustomMarker(
+        Icons.dns,
+        const Color(0xFF2FB080),
+        'NVT',
+      );
+    } catch (_) {
+      // In headless or test environments where canvas is not available
+    }
+    await _loadMetadata();
   }
 
   @override
@@ -91,7 +112,11 @@ class _CreateSegmentScreenState extends State<CreateSegmentScreen> {
 
     setState(() {
       _metadata = metadata;
-      _contextMarkers = SegmentMapBuilder.buildContextMarkers(metadata);
+      _contextMarkers = SegmentMapBuilder.buildContextMarkers(
+        metadata,
+        popIcon: _popIcon,
+        nvtIcon: _nvtIcon,
+      );
       _contextPolylines = SegmentMapBuilder.buildContextPolylines(metadata);
       _rebuildMapElements();
 

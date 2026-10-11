@@ -111,7 +111,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) {
               final projectId = state.pathParameters['projectId']!;
               final clusterId = state.pathParameters['clusterId']!;
-              return ClusterAreaDashboardScreen(projectId: projectId, clusterId: clusterId);
+              final lat = double.tryParse(state.uri.queryParameters['lat'] ?? '');
+              final lng = double.tryParse(state.uri.queryParameters['lng'] ?? '');
+              return ClusterAreaDashboardScreen(
+                projectId: projectId,
+                clusterId: clusterId,
+                initialLat: lat,
+                initialLng: lng,
+              );
             },
           ),
           GoRoute(

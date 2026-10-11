@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' hide Cluster;
 import 'package:url_launcher/url_launcher.dart';
+import 'cluster_dashboard/utilities/utility_map_renderer.dart';
 
 import '../../core/services/location_service.dart';
 import '../../models/planning/enums/work_type.dart';
@@ -33,6 +34,8 @@ import 'cluster_dashboard/widgets/save_node_bottom_sheet.dart';
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
   final String clusterId;
+  final double? initialLat;
+  final double? initialLng;
   final IClusterDashboardRepository? repository;
   final IUtilityRepository? utilityRepository;
   final ClusterOfflineMapService? offlineMapService;
@@ -43,6 +46,8 @@ class ClusterAreaDashboardScreen extends StatefulWidget {
     super.key,
     required this.projectId,
     required this.clusterId,
+    this.initialLat,
+    this.initialLng,
     this.repository,
     this.utilityRepository,
     this.offlineMapService,
@@ -66,6 +71,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   List<Netzverteiler> _nvts = [];
   List<Segment> _segments = [];
   List<UtilityLine> _utilities = [];
+  LatLng? _clusterCenter;
 
   Map<String, List<ClusterElementItem>> _groupedItems = {};
   Map<String, int> _stats = {'POP': 0, 'Netzverteiler': 0, 'Segments': 0};
@@ -89,6 +95,9 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.initialLat != null && widget.initialLng != null) {
+      _clusterCenter = LatLng(widget.initialLat!, widget.initialLng!);
+    }
     _repository = widget.repository ?? ClusterDashboardRepository();
     _utilityRepository = widget.utilityRepository ?? UtilityRepository();
     _offlineMapService = widget.offlineMapService ?? ClusterOfflineMapService();
@@ -101,7 +110,11 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   }
 
   Future<void> _initCustomIconsAndLoad() async {
-    await _mapObjectBuilder.loadCustomIcons();
+    try {
+      await _mapObjectBuilder.loadCustomIcons();
+    } catch (_) {
+      // In headless or test environments where canvas is not available
+    }
     await _loadClusterData();
   }
 
@@ -179,7 +192,44 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
 
     final pops = await _repository.fetchPops(widget.clusterId);
     final segments = await _repository.fetchSegments(widget.projectId);
-    final utilities = await _utilityRepository.fetchUtilities();
+    var utilities = await _utilityRepository.fetchUtilities();
+
+    if (_clusterCenter == null) {
+      final cluster = await _repository.fetchCluster(widget.clusterId);
+      if (cluster?.latitude != null && cluster?.longitude != null) {
+        _clusterCenter = LatLng(cluster!.latitude!, cluster.longitude!);
+      } else {
+        final project = await _repository.fetchProject(widget.projectId);
+        if (project?.latitude != null && project?.longitude != null) {
+          _clusterCenter = LatLng(project!.latitude!, project.longitude!);
+        }
+      }
+    }
+
+    if (_clusterCenter == null) {
+      if (pops.isNotEmpty && pops.first.latitude != null && pops.first.longitude != null) {
+        _clusterCenter = LatLng(pops.first.latitude!, pops.first.longitude!);
+      } else {
+        final nvts = pops.expand((p) => p.nvts).toList();
+        if (nvts.isNotEmpty && nvts.first.latitude != null && nvts.first.longitude != null) {
+          _clusterCenter = LatLng(nvts.first.latitude!, nvts.first.longitude!);
+        } else if (segments.isNotEmpty && segments.first.geometry.isNotEmpty) {
+          _clusterCenter = LatLng(segments.first.geometry.first.latitude, segments.first.geometry.first.longitude);
+        }
+      }
+    }
+
+    // Filter out utilities from distant areas if cluster center is known
+    if (_clusterCenter != null) {
+      utilities = utilities.where((u) {
+        final pts = UtilityMapRenderer.extractCoordinates(u.geometry);
+        if (pts.isEmpty) return false;
+        final first = pts.first;
+        final dLat = (first.latitude - _clusterCenter!.latitude).abs();
+        final dLng = (first.longitude - _clusterCenter!.longitude).abs();
+        return dLat < 1.0 && dLng < 1.0;
+      }).toList();
+    }
 
     _pops = pops;
     _nvts = pops.expand((p) => p.nvts).toList();
@@ -195,6 +245,14 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
 
     _groupedItems = _buildGroupedItems();
     _rebuildMap();
+
+    if (_mapController != null && _clusterCenter != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: _clusterCenter!, zoom: 16.0),
+        ),
+      );
+    }
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -247,6 +305,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       onMachineryTapped: _onMachineryMarkerTapped,
       onUtilityTapped: _onUtilityTapped,
       currentInitialCamera: _mapData.initialCamera,
+      clusterCenter: _clusterCenter,
     );
   }
 
@@ -436,9 +495,21 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           InteractiveMapView(
             markers: _mapData.markers,
             polylines: _mapData.polylines,
-            initialCameraPosition: _mapData.initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+            initialCameraPosition: _mapData.initialCamera ?? CameraPosition(
+              target: _clusterCenter ?? const LatLng(52.52, 13.40),
+              zoom: _clusterCenter != null ? 16 : 12,
+            ),
             onTap: _onMapTapped,
-            onMapCreated: (controller) => _mapController = controller,
+            onMapCreated: (controller) {
+              _mapController = controller;
+              if (_clusterCenter != null) {
+                controller.animateCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(target: _clusterCenter!, zoom: 16.0),
+                  ),
+                );
+              }
+            },
             myLocationEnabled: _hasLocationPermission,
             myLocationButtonEnabled: _hasLocationPermission,
           ),

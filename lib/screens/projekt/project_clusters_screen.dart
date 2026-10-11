@@ -14,6 +14,8 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
   int _selectedTabIndex = 0;
   bool _isLoading = true;
   String _projectName = 'Loading...';
+  double? _projectLatitude;
+  double? _projectLongitude;
   List<Map<String, dynamic>> _clusters = [];
 
   @override
@@ -29,6 +31,12 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
       // Fetch project details
       final projectData = await api.get('/projects/${widget.projectId}');
       _projectName = projectData['name'] ?? 'Project ${widget.projectId}';
+      _projectLatitude = (projectData['startLatitude'] ?? projectData['latitude']) != null
+          ? (projectData['startLatitude'] ?? projectData['latitude']).toDouble()
+          : null;
+      _projectLongitude = (projectData['startLongitude'] ?? projectData['longitude']) != null
+          ? (projectData['startLongitude'] ?? projectData['longitude']).toDouble()
+          : null;
 
       // Fetch all clusters
       final clustersData = await api.get('/clusters');
@@ -64,6 +72,99 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
           _projectName = 'Project ${widget.projectId}';
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _showCreateClusterDialog() async {
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1D21),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('New Cluster', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: nameController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Cluster Name',
+                labelStyle: TextStyle(color: Colors.white60),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF6938ef))),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: descController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                labelStyle: TextStyle(color: Colors.white60),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF6938ef))),
+              ),
+            ),
+            if (_projectLatitude != null && _projectLongitude != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Coordinates: ${_projectLatitude!.toStringAsFixed(4)}, ${_projectLongitude!.toStringAsFixed(4)} (from Project)',
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6938ef),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              if (nameController.text.trim().isNotEmpty) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('CREATE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      try {
+        final api = ApiService();
+        final payload = {
+          'name': nameController.text.trim(),
+          'description': descController.text.trim(),
+          'projectId': widget.projectId,
+          if (_projectLatitude != null) 'latitude': _projectLatitude,
+          if (_projectLongitude != null) 'longitude': _projectLongitude,
+        };
+        final newCluster = await api.post('/clusters', payload);
+        await _loadData();
+        if (mounted && newCluster != null && newCluster['id'] != null) {
+          final lat = newCluster['latitude'] ?? _projectLatitude;
+          final lng = newCluster['longitude'] ?? _projectLongitude;
+          final query = (lat != null && lng != null) ? '?lat=$lat&lng=$lng' : '';
+          context.push('/project_clusters/${widget.projectId}/areas/${newCluster['id']}$query');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error creating cluster: $e'), backgroundColor: Colors.red),
+          );
+        }
       }
     }
   }
@@ -120,7 +221,7 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 ElevatedButton.icon(
-                  onPressed: () {},
+                  onPressed: _showCreateClusterDialog,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6938ef),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -233,7 +334,10 @@ class _ProjectClustersScreenState extends State<ProjectClustersScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                context.push('/project_clusters/${widget.projectId}/areas/${cluster['id']}');
+                final lat = cluster['latitude'] ?? _projectLatitude;
+                final lng = cluster['longitude'] ?? _projectLongitude;
+                final query = (lat != null && lng != null) ? '?lat=$lat&lng=$lng' : '';
+                context.push('/project_clusters/${widget.projectId}/areas/${cluster['id']}$query');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white.withOpacity(0.05),

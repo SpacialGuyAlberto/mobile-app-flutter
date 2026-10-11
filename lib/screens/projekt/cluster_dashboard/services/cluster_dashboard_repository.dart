@@ -1,14 +1,18 @@
 import 'dart:convert';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' hide Cluster;
 import 'package:http/http.dart' as http;
 import '../../../../core/network/api_service.dart';
 import '../../../../models/planning/infrastructure_elements.dart';
 import '../../../../models/planning/segment.dart';
+import '../../../../models/planning/cluster.dart';
+import '../../../../models/planning/project.dart';
 
 /// Contract for cluster area dashboard data operations (ISP and DIP compliant).
 abstract class IClusterDashboardRepository {
   Future<List<Pop>> fetchPops(String clusterId);
   Future<List<Segment>> fetchSegments(String projectId);
+  Future<Cluster?> fetchCluster(String clusterId);
+  Future<Project?> fetchProject(String projectId);
   Future<double?> fetchElevation(LatLng coordinates);
   Future<void> savePop(Pop pop);
   Future<void> saveNetzverteiler(Netzverteiler nvt);
@@ -32,9 +36,29 @@ class ClusterDashboardRepository implements IClusterDashboardRepository {
       final popData = await _apiService.get('/pops');
       final allPops = (popData as List).map((e) => Pop.fromJson(e)).toList();
       final filtered = allPops.where((p) => p.clusterId == clusterId).toList();
-      return filtered.isNotEmpty ? filtered : allPops;
+      return filtered;
     } catch (_) {
       return [];
+    }
+  }
+
+  @override
+  Future<Cluster?> fetchCluster(String clusterId) async {
+    try {
+      final clusterData = await _apiService.get('/clusters/$clusterId');
+      return Cluster.fromJson(clusterData);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<Project?> fetchProject(String projectId) async {
+    try {
+      final projectData = await _apiService.get('/projects/$projectId');
+      return Project.fromJson(projectData);
+    } catch (_) {
+      return null;
     }
   }
 

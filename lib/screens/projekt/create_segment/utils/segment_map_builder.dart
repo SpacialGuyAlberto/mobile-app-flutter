@@ -16,7 +16,11 @@ class SegmentMapElements {
 
 /// Helper to build context markers/polylines and the active route drawing (SRP compliant).
 class SegmentMapBuilder {
-  static Set<Marker> buildContextMarkers(CreateSegmentMetadata metadata) {
+  static Set<Marker> buildContextMarkers(
+    CreateSegmentMetadata metadata, {
+    BitmapDescriptor? popIcon,
+    BitmapDescriptor? nvtIcon,
+  }) {
     final markers = <Marker>{};
 
     for (final pop in metadata.pops) {
@@ -27,7 +31,7 @@ class SegmentMapBuilder {
             (pop['latitude'] as num).toDouble(),
             (pop['longitude'] as num).toDouble(),
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+          icon: popIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
           infoWindow: InfoWindow(title: pop['name']?.toString() ?? 'POP Node'),
         ));
       }
@@ -41,7 +45,7 @@ class SegmentMapBuilder {
             (nvt['latitude'] as num).toDouble(),
             (nvt['longitude'] as num).toDouble(),
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon: nvtIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: InfoWindow(title: nvt['identifier']?.toString() ?? 'Netzverteiler'),
         ));
       }

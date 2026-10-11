@@ -21,52 +21,94 @@ class ClusterMapData {
 
 /// Dedicated builder for Google Maps markers and polylines (SRP compliant).
 class ClusterMapObjectBuilder {
+  static const double defaultMarkerSize = 72.0;
+
   BitmapDescriptor? popIcon;
   BitmapDescriptor? nvtIcon;
   BitmapDescriptor? crewIcon;
 
-  Future<void> loadCustomIcons() async {
-    popIcon = await _createCustomMarker(Icons.business, const Color(0xFF6938EF), 'POP');
-    nvtIcon = await _createCustomMarker(Icons.dns, const Color(0xFF2FB080), 'NVT');
-    crewIcon = await _createCustomMarker(Icons.engineering, Colors.orange, 'CREW');
+  Future<void> loadCustomIcons({double size = defaultMarkerSize}) async {
+    popIcon = await createCustomMarker(Icons.business, const Color(0xFF6938EF), 'POP', size: size);
+    nvtIcon = await createCustomMarker(Icons.dns, const Color(0xFF2FB080), 'NVT', size: size);
+    crewIcon = await createCustomMarker(Icons.engineering, Colors.orange, 'CREW', size: size);
   }
 
-  Future<BitmapDescriptor> _createCustomMarker(IconData icon, Color color, String label) async {
+  static Future<BitmapDescriptor> createCustomMarker(
+    IconData icon,
+    Color color,
+    String label, {
+    double size = defaultMarkerSize,
+  }) async {
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
-    const double size = 140.0;
 
     final Paint paint = Paint()..color = color;
     final Paint borderPaint = Paint()
       ..color = Colors.white
-      ..strokeWidth = 6.0
+      ..strokeWidth = (size * 0.04).clamp(2.0, 4.0)
       ..style = PaintingStyle.stroke;
 
-    canvas.drawCircle(const Offset(size / 2, size / 2 - 20), size / 3, paint);
-    canvas.drawCircle(const Offset(size / 2, size / 2 - 20), size / 3, borderPaint);
+    final circleCenterY = size * 0.38;
+    final circleRadius = size * 0.32;
 
-    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    canvas.drawCircle(Offset(size / 2, circleCenterY), circleRadius, paint);
+    canvas.drawCircle(Offset(size / 2, circleCenterY), circleRadius, borderPaint);
+
+    final TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    final iconFontSize = size * 0.32;
     textPainter.text = TextSpan(
       text: String.fromCharCode(icon.codePoint),
-      style: TextStyle(fontSize: 45.0, fontFamily: icon.fontFamily, package: icon.fontPackage, color: Colors.white),
+      style: TextStyle(
+        fontSize: iconFontSize,
+        fontFamily: icon.fontFamily,
+        package: icon.fontPackage,
+        color: Colors.white,
+      ),
     );
     textPainter.layout();
-    textPainter.paint(canvas, Offset((size - textPainter.width) / 2, (size / 2 - 20) - textPainter.height / 2));
+    textPainter.paint(
+      canvas,
+      Offset((size - textPainter.width) / 2, circleCenterY - textPainter.height / 2),
+    );
+
+    final pillHeight = (size * 0.22).clamp(14.0, 22.0);
+    final pillCenterY = size - (pillHeight / 2) - 1.5;
+    final pillWidth = (size * 0.78).clamp(42.0, 70.0);
 
     final Paint pillPaint = Paint()..color = Colors.black87;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: const Offset(size / 2, size - 15), width: size - 20, height: 30), const Radius.circular(15)),
-      pillPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: const Offset(size / 2, size - 15), width: size - 20, height: 30), const Radius.circular(15)),
-      borderPaint..strokeWidth = 2.0,
+    final pillRRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(size / 2, pillCenterY),
+        width: pillWidth,
+        height: pillHeight,
+      ),
+      Radius.circular(pillHeight / 2),
     );
 
-    TextPainter labelPainter = TextPainter(textDirection: TextDirection.ltr);
-    labelPainter.text = TextSpan(text: label, style: const TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold, color: Colors.white));
+    canvas.drawRRect(pillRRect, pillPaint);
+    canvas.drawRRect(
+      pillRRect,
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
+
+    final TextPainter labelPainter = TextPainter(textDirection: TextDirection.ltr);
+    final labelFontSize = (size * 0.13).clamp(8.5, 11.5);
+    labelPainter.text = TextSpan(
+      text: label,
+      style: TextStyle(
+        fontSize: labelFontSize,
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+      ),
+    );
     labelPainter.layout();
-    labelPainter.paint(canvas, Offset((size - labelPainter.width) / 2, size - 15 - labelPainter.height / 2));
+    labelPainter.paint(
+      canvas,
+      Offset((size - labelPainter.width) / 2, pillCenterY - labelPainter.height / 2),
+    );
 
     final ui.Image image = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
     final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -84,6 +126,7 @@ class ClusterMapObjectBuilder {
     required void Function(Segment) onMachineryTapped,
     void Function(UtilityLine)? onUtilityTapped,
     CameraPosition? currentInitialCamera,
+    LatLng? clusterCenter,
   }) {
     final markers = <Marker>{};
     final polylines = <Polyline>{};
@@ -177,8 +220,12 @@ class ClusterMapObjectBuilder {
 
     CameraPosition? initialCamera = currentInitialCamera;
     if (initialCamera == null) {
-      if (nvts.isNotEmpty && nvts.first.latitude != null) {
+      if (clusterCenter != null) {
+        initialCamera = CameraPosition(target: clusterCenter, zoom: 16.0);
+      } else if (nvts.isNotEmpty && nvts.first.latitude != null) {
         initialCamera = CameraPosition(target: LatLng(nvts.first.latitude!, nvts.first.longitude!), zoom: 16.0);
+      } else if (pops.isNotEmpty && pops.first.latitude != null) {
+        initialCamera = CameraPosition(target: LatLng(pops.first.latitude!, pops.first.longitude!), zoom: 16.0);
       } else if (segments.isNotEmpty && segments.first.geometry.isNotEmpty) {
         initialCamera = CameraPosition(
           target: LatLng(segments.first.geometry.first.latitude, segments.first.geometry.first.longitude),

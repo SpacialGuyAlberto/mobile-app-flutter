@@ -7,6 +7,8 @@ class Cluster {
   final String projectId;
   final String? projectManagerId;
   final List<Pop> pops;
+  final double? latitude;
+  final double? longitude;
 
   const Cluster({
     required this.id,
@@ -15,6 +17,8 @@ class Cluster {
     required this.projectId,
     this.projectManagerId,
     this.pops = const [],
+    this.latitude,
+    this.longitude,
   });
 
   factory Cluster.fromJson(Map<String, dynamic> json) {
@@ -27,6 +31,8 @@ class Cluster {
       pops: json['pops'] != null 
           ? (json['pops'] as List).map((e) => Pop.fromJson(e)).toList() 
           : const [],
+      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
+      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
     );
   }
 
@@ -38,6 +44,8 @@ class Cluster {
       'projectId': projectId,
       'projectManagerId': projectManagerId,
       'pops': pops.map((e) => e.toJson()).toList(),
+      'latitude': latitude,
+      'longitude': longitude,
     };
   }
 }
