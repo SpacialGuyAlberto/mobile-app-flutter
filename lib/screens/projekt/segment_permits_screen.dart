@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import '../../core/network/api_service.dart';
 
 class SegmentPermitsScreen extends StatefulWidget {
   final String segmentId;
@@ -26,7 +27,7 @@ class _SegmentPermitsScreenState extends State<SegmentPermitsScreen> {
   Future<void> _fetchPermits() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse('http://fedora.fritz.box:8080/api/v1/segments/${widget.segmentId}/permits'));
+      final response = await http.get(Uri.parse('${ApiService.baseHost}/api/v1/segments/${widget.segmentId}/permits'));
       if (response.statusCode == 200) {
         setState(() {
           _permits = jsonDecode(response.body);
@@ -50,7 +51,7 @@ class _SegmentPermitsScreenState extends State<SegmentPermitsScreen> {
         setState(() => _isUploading = true);
         var request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://fedora.fritz.box:8080/api/v1/segments/${widget.segmentId}/permits'),
+          Uri.parse('${ApiService.baseHost}/api/v1/segments/${widget.segmentId}/permits'),
         );
         request.files.add(await http.MultipartFile.fromPath('file', result.files.single.path!));
         var response = await request.send();
@@ -112,9 +113,12 @@ class _SegmentPermitsScreenState extends State<SegmentPermitsScreen> {
                         itemCount: _permits.length,
                         itemBuilder: (context, index) {
                           final permit = _permits[index];
-                          // Map fedora.fritz.box to Android Emulator local IP if needed
-                          final pdfUrl = permit['pdfUrl']?.toString().replaceAll('fedora.fritz.box', 'fedora.fritz.box');
-                          final previewUrl = permit['previewImageUrl']?.toString().replaceAll('fedora.fritz.box', 'fedora.fritz.box');
+                          // Map fedora.fritz.box to active host if needed
+                          final rawPdfUrl = permit['pdfUrl']?.toString() ?? '';
+                          final rawPreviewUrl = permit['previewImageUrl']?.toString() ?? '';
+                          final baseHostWithoutScheme = ApiService.baseHost.replaceFirst(RegExp(r'^https?://'), '');
+                          final pdfUrl = rawPdfUrl.replaceAll('fedora.fritz.box:8080', baseHostWithoutScheme);
+                          final previewUrl = rawPreviewUrl.replaceAll('fedora.fritz.box:8080', baseHostWithoutScheme);
                           return Card(
                             color: const Color(0xFF1C1D21),
                             shape: RoundedRectangleBorder(

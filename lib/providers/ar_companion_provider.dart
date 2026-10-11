@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import '../core/config/env_config.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -19,7 +21,7 @@ class ARCompanionState {
 
   ARCompanionState({
     this.isBroadcasting = false,
-    this.targetIp = '192.168.178.64',
+    this.targetIp = '172.20.10.5',
     this.targetPort = 8000,
     this.lastMessage = '',
     this.projectId,
@@ -43,7 +45,42 @@ class ARCompanionState {
 }
 
 class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
-  ARCompanionNotifier() : super(ARCompanionState());
+  ARCompanionNotifier() : super(ARCompanionState()) {
+    loadConfig();
+  }
+
+  static Future<File> _getConfigFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/ar_companion_config.json');
+  }
+
+  Future<void> loadConfig() async {
+    await EnvConfig.init();
+    state = state.copyWith(
+      targetIp: EnvConfig.glassesIp,
+      targetPort: EnvConfig.headsetPort,
+    );
+    try {
+      final file = await _getConfigFile();
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final data = jsonDecode(content);
+        if (data['targetIp'] != null && data['targetIp'].toString().trim().isNotEmpty) {
+          state = state.copyWith(
+            targetIp: data['targetIp'].toString().trim(),
+            targetPort: data['targetPort'] != null ? int.tryParse(data['targetPort'].toString()) ?? EnvConfig.headsetPort : EnvConfig.headsetPort,
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> saveConfig(String ip, int port) async {
+    try {
+      final file = await _getConfigFile();
+      await file.writeAsString(jsonEncode({'targetIp': ip, 'targetPort': port}));
+    } catch (_) {}
+  }
 
   StreamSubscription<Position>? _positionSubscription;
   RawDatagramSocket? _socket;
@@ -73,6 +110,7 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
   Timer? _heartbeatTimer;
 
   Future<String?> startBroadcasting(String ip, int port) async {
+    await saveConfig(ip, port);
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       state = state.copyWith(lastMessage: 'Location services are disabled.');
@@ -172,6 +210,13 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
     try {
       final targetAddress = InternetAddress(state.targetIp);
       _socket?.send(bytes, targetAddress, state.targetPort);
+
+      // Also try general subnet broadcast to guarantee arrival on hotspot network
+      if (state.targetIp != '255.255.255.255') {
+        try {
+          _socket?.send(bytes, InternetAddress('255.255.255.255'), state.targetPort);
+        } catch (_) {}
+      }
       
       state = state.copyWith(lastMessage: 'Sent: lat: ${position.latitude.toStringAsFixed(6)}, lng: ${position.longitude.toStringAsFixed(6)} (Proj: ${state.projectId})');
     } catch (e) {

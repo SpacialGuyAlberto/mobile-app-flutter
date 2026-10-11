@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import '../../core/network/api_service.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/segment_edit_bottom_sheet.dart';
 
@@ -38,7 +39,7 @@ class _BauleiterMapScreenState extends State<BauleiterMapScreen> {
     try {
       var request = http.MultipartRequest(
         'POST', 
-        Uri.parse('http://fedora.fritz.box:8080/api/v1/planning/segment-recognition/process-raster')
+        Uri.parse('${ApiService.baseHost}/api/v1/planning/segment-recognition/process-raster')
       );
       
       request.files.add(await http.MultipartFile.fromPath('file', image.path));

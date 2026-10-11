@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/ar_companion_provider.dart';
+import '../../core/network/api_service.dart';
 
 class ARCompanionScreen extends ConsumerStatefulWidget {
   const ARCompanionScreen({Key? key}) : super(key: key);
@@ -11,8 +12,15 @@ class ARCompanionScreen extends ConsumerStatefulWidget {
 }
 
 class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
-  final _ipController = TextEditingController(text: 'fedora.fritz.box'); // IP de la laptop/Unity Editor
+  late final TextEditingController _ipController;
   final _portController = TextEditingController(text: '8000');
+
+  @override
+  void initState() {
+    super.initState();
+    final currentTarget = ref.read(arCompanionProvider).targetIp;
+    _ipController = TextEditingController(text: currentTarget.isNotEmpty ? currentTarget : '172.20.10.5');
+  }
 
   @override
   void dispose() {

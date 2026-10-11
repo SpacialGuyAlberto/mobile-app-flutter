@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import '../../core/network/api_service.dart';
 import '../../widgets/glass_card.dart';
 
 class ProjectSegmentsScreen extends StatefulWidget {
@@ -23,7 +24,7 @@ class _ProjectSegmentsScreenState extends State<ProjectSegmentsScreen> {
 
   Future<List<dynamic>> _fetchSegments() async {
     try {
-      final response = await http.get(Uri.parse('http://fedora.fritz.box:8080/api/v1/planning/projects/${widget.projectId}/segments'));
+      final response = await http.get(Uri.parse('${ApiService.baseHost}/api/v1/planning/projects/${widget.projectId}/segments'));
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       }
