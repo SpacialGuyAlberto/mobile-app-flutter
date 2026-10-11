@@ -152,7 +152,7 @@ class _SegmentEditBottomSheetState extends State<SegmentEditBottomSheet> {
       };
       
       if (segmentId != null) {
-        final url = Uri.parse('http://fedora.fritz.box:8080/api/segments/$segmentId');
+        final url = Uri.parse('${ApiService.baseUrl}/segments/$segmentId');
         final response = await http.put(
           url,
           headers: {'Content-Type': 'application/json'},

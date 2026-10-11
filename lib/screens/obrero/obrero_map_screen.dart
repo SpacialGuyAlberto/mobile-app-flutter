@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
+import '../../core/network/api_service.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/segment_edit_bottom_sheet.dart';
 
@@ -36,7 +37,7 @@ class _ObreroMapScreenState extends State<ObreroMapScreen> {
 
     try {
       // In a real app, pass the crew ID or auth token.
-      final response = await http.get(Uri.parse('http://fedora.fritz.box:8080/api/v1/planning/crews/1/segments'));
+      final response = await http.get(Uri.parse('${ApiService.baseHost}/api/v1/planning/crews/1/segments'));
 
       if (response.statusCode == 200) {
         final List<dynamic> segments = jsonDecode(response.body);

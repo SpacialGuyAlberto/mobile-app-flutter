@@ -33,6 +33,9 @@ class Project {
     this.lifecycleDone = const [],
   });
 
+  double? get latitude => startLatitude;
+  double? get longitude => startLongitude;
+
   factory Project.fromJson(Map<String, dynamic> json) {
     return Project(
       id: json['id'].toString(),
@@ -41,8 +44,8 @@ class Project {
       startDate: json['startDate'] != null ? DateTime.parse(json['startDate']) : null,
       endDate: json['endDate'] != null ? DateTime.parse(json['endDate']) : null,
       organization: json['organization'] != null ? Organization.fromJson(json['organization']) : null,
-      startLatitude: json['startLatitude']?.toDouble(),
-      startLongitude: json['startLongitude']?.toDouble(),
+      startLatitude: (json['startLatitude'] ?? json['latitude']) != null ? (json['startLatitude'] ?? json['latitude']).toDouble() : null,
+      startLongitude: (json['startLongitude'] ?? json['longitude']) != null ? (json['startLongitude'] ?? json['longitude']).toDouble() : null,
       geometry: json['geometry'] != null 
           ? (json['geometry'] as List).map((e) => GeometryPoint.fromJson(e)).toList() 
           : const [],

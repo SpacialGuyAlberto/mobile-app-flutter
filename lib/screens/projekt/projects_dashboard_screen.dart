@@ -54,15 +54,116 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
         }
       }
 
-      setState(() {
-        _projects = projects;
-        _markers = markers;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _projects = projects;
+          _markers = markers;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       print('Error loading projects: $e');
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  Future<void> _showServerConfigDialog() async {
+    final controller = TextEditingController(text: ApiService.baseUrl);
+    bool isTesting = false;
+    String? statusMessage;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1C1D21),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.dns_outlined, color: Color(0xFF6938ef)),
+                SizedBox(width: 8),
+                Text('Server Configuration', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Si la IP de tu hotspot o red cambió, actualiza la dirección del backend aquí o usa Auto-Detectar.',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'Backend Base URL',
+                    labelStyle: TextStyle(color: Colors.white54, fontSize: 12),
+                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF6938ef))),
+                  ),
+                ),
+                if (statusMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    statusMessage!,
+                    style: TextStyle(
+                      color: statusMessage!.startsWith('Error') ? Colors.redAccent : Colors.greenAccent,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: isTesting ? null : () async {
+                    setDialogState(() {
+                      isTesting = true;
+                      statusMessage = 'Probando candidatos de conexión...';
+                    });
+                    final detected = await ApiService.autoDetectWorkingBaseUrl();
+                    setDialogState(() {
+                      isTesting = false;
+                      if (detected != null) {
+                        controller.text = detected;
+                        statusMessage = 'Conectado exitosamente con $detected';
+                      } else {
+                        statusMessage = 'Error: Ningún candidato respondió.';
+                      }
+                    });
+                  },
+                  icon: isTesting 
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) 
+                      : const Icon(Icons.autorenew, size: 16, color: Color(0xFF6938ef)),
+                  label: const Text('Auto-Detectar Conexión', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar', style: TextStyle(color: Colors.white54)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6938ef),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  await ApiService.setBaseUrl(controller.text.trim());
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  _loadProjects();
+                },
+                child: const Text('Guardar y Recargar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   void _onProjectSelected(String projectName) async {
@@ -179,24 +280,30 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
       body: SafeArea(
         child: _isLoading 
             ? const Center(child: CircularProgressIndicator()) 
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 32),
-            if (_projects.isNotEmpty) ...[
-              _buildActiveProjectCard(selectedProject == 'All Projects' ? _projects.first : _projects.firstWhere((p) => p.name == selectedProject)),
-              const SizedBox(height: 24),
-              _buildConstructionHealth(),
-              const SizedBox(height: 32),
-              _buildOtherProjectsList(),
-            ],
-            const SizedBox(height: 80),
-          ],
-        ),
-      ),
+            : RefreshIndicator(
+                onRefresh: _loadProjects,
+                backgroundColor: const Color(0xFF1C1D21),
+                color: const Color(0xFF6938ef),
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(),
+                      const SizedBox(height: 32),
+                      if (_projects.isNotEmpty) ...[
+                        _buildActiveProjectCard(selectedProject == 'All Projects' ? _projects.first : _projects.firstWhere((p) => p.name == selectedProject)),
+                        const SizedBox(height: 24),
+                        _buildConstructionHealth(),
+                        const SizedBox(height: 32),
+                        _buildOtherProjectsList(),
+                      ],
+                      const SizedBox(height: 80),
+                    ],
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -226,7 +333,30 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            const Text('SELECT PROJECT', style: TextStyle(color: Colors.white54, fontSize: 8, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.refresh, color: Colors.white54, size: 16),
+                  tooltip: 'Refrescar proyectos',
+                  onPressed: _loadProjects,
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.dns_outlined, color: Colors.white54, size: 16),
+                  tooltip: 'Configuración de Servidor',
+                  onPressed: _showServerConfigDialog,
+                ),
+                const SizedBox(width: 8),
+                const Text('SELECT PROJECT', style: TextStyle(color: Colors.white54, fontSize: 8, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+              ],
+            ),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -345,10 +475,11 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (_projects.isNotEmpty) {
                   final activeProject = selectedProject == 'All Projects' ? _projects.first : _projects.firstWhere((p) => p.name == selectedProject);
-                  context.push('/project_clusters/${activeProject.id}');
+                  await context.push('/project_clusters/${activeProject.id}');
+                  if (mounted) _loadProjects();
                 }
               },
               style: OutlinedButton.styleFrom(
@@ -449,8 +580,9 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
                     Expanded(
                       flex: 2,
                       child: OutlinedButton(
-                        onPressed: () {
-                          context.push('/project_clusters/${p.id}');
+                        onPressed: () async {
+                          await context.push('/project_clusters/${p.id}');
+                          if (mounted) _loadProjects();
                         },
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: Colors.white10),
@@ -478,7 +610,7 @@ class _ProjectsDashboardScreenState extends ConsumerState<ProjectsDashboardScree
               ],
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }

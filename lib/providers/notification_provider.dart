@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../models/notification_message.dart';
+import '../core/network/api_service.dart';
 import 'ar_companion_provider.dart';
 
 class NotificationState {
@@ -33,9 +34,8 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   void _startListening() async {
     // Assuming user ID 1 for now, in a real app this would come from an AuthProvider
-    // Map fedora.fritz.box to Android Emulator local IP if needed
-    final host = Platform.isAndroid ? 'fedora.fritz.box' : 'fedora.fritz.box';
-    final url = Uri.parse('http://$host:8080/api/notifications/stream?userId=1');
+    await ApiService.loadConfig();
+    final url = Uri.parse('${ApiService.baseUrl}/notifications/stream?userId=1');
     final request = http.Request('GET', url);
     request.headers['Accept'] = 'text/event-stream';
 
