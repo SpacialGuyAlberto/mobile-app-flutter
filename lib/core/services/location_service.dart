@@ -24,4 +24,17 @@ class LocationService {
 
     return await Geolocator.getCurrentPosition();
   }
+
+  Future<bool> hasPermission() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return false;
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return false;
+    }
+
+    return permission != LocationPermission.deniedForever;
+  }
 }

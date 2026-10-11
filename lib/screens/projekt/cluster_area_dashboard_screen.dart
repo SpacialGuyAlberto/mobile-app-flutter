@@ -1,71 +1,85 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import '../inventory/machinery_list_screen.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:go_router/go_router.dart';
-import '../../widgets/glass_card.dart';
-import '../../widgets/interactive_map_view.dart';
-import '../../core/network/api_service.dart';
-import '../../models/planning/infrastructure_elements.dart';
-import '../../models/planning/segment.dart';
-import '../../models/planning/geometry_point.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../core/services/location_service.dart';
 import '../../models/planning/enums/work_type.dart';
 import '../../models/planning/enums/workflow_state.dart';
+import '../../models/planning/geometry_point.dart';
+import '../../models/planning/infrastructure_elements.dart';
+import '../../models/planning/segment.dart';
 import '../../models/utility_models.dart';
-import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'dart:ui' as ui;
-import 'dart:typed_data';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
+import '../../widgets/interactive_map_view.dart';
 import '../../widgets/segment_edit_bottom_sheet.dart';
-import '../bauleiter/crew_detail_screen.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/ar_companion_provider.dart';
-import 'package:geolocator/geolocator.dart';
+
+import 'cluster_dashboard/models/cluster_element_item.dart';
+import 'cluster_dashboard/services/cluster_dashboard_repository.dart';
+import 'cluster_dashboard/services/cluster_offline_map_service.dart';
+import 'cluster_dashboard/utilities/utility_adapter.dart';
+import 'cluster_dashboard/utilities/utility_info_sheet.dart';
+import 'cluster_dashboard/utilities/utility_repository.dart';
+import 'cluster_dashboard/utils/cluster_map_object_builder.dart';
+import 'cluster_dashboard/widgets/add_node_type_sheet.dart';
+import 'cluster_dashboard/widgets/cluster_map_controls.dart';
+import 'cluster_dashboard/widgets/cluster_node_accordion.dart';
+import 'cluster_dashboard/widgets/cluster_stats_grid.dart';
+import 'cluster_dashboard/widgets/crew_info_sheet.dart';
+import 'cluster_dashboard/widgets/machinery_info_sheet.dart';
+import 'cluster_dashboard/widgets/save_node_bottom_sheet.dart';
+
+/// Screen coordinating cluster dashboard data, map visualizer, and operations (SOLID compliant).
 class ClusterAreaDashboardScreen extends StatefulWidget {
   final String projectId;
   final String clusterId;
+  final IClusterDashboardRepository? repository;
+  final IUtilityRepository? utilityRepository;
+  final ClusterOfflineMapService? offlineMapService;
+  final LocationService? locationService;
+  final ClusterMapObjectBuilder? mapObjectBuilder;
 
   const ClusterAreaDashboardScreen({
-    Key? key,
+    super.key,
     required this.projectId,
     required this.clusterId,
-  }) : super(key: key);
+    this.repository,
+    this.utilityRepository,
+    this.offlineMapService,
+    this.locationService,
+    this.mapObjectBuilder,
+  });
 
   @override
   State<ClusterAreaDashboardScreen> createState() => _ClusterAreaDashboardScreenState();
 }
 
 class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen> {
+  late final IClusterDashboardRepository _repository;
+  late final IUtilityRepository _utilityRepository;
+  late final ClusterOfflineMapService _offlineMapService;
+  late final LocationService _locationService;
+  late final ClusterMapObjectBuilder _mapObjectBuilder;
+
   bool _isLoading = true;
-  
   List<Pop> _pops = [];
   List<Netzverteiler> _nvts = [];
   List<Segment> _segments = [];
   List<UtilityLine> _utilities = [];
 
-  Map<String, List<dynamic>> groupedElements = {};
-  Map<String, int> stats = {'POP': 0, 'Netzverteiler': 0, 'Segments': 0};
-  String expandedGroup = 'POP';
+  Map<String, List<ClusterElementItem>> _groupedItems = {};
+  Map<String, int> _stats = {'POP': 0, 'Netzverteiler': 0, 'Segments': 0};
+  String _expandedGroup = 'POP';
 
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
-  CameraPosition? _initialCamera;
+  ClusterMapData _mapData = const ClusterMapData(markers: {}, polylines: {});
   GoogleMapController? _mapController;
 
   bool isMapEditMode = false;
   String? activeDrawTool;
   LatLng? tempMarker;
-  Map<String, dynamic> newNodeData = {};
 
   bool is3DMode = false;
   bool isPanelVisible = true;
-
-  BitmapDescriptor? _popIcon;
-  BitmapDescriptor? _nvtIcon;
-  BitmapDescriptor? _crewIcon;
-  String? _selectedSegmentId;
 
   bool _isOffline = false;
   File? _offlineMapFile;
@@ -75,36 +89,39 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
   @override
   void initState() {
     super.initState();
+    _repository = widget.repository ?? ClusterDashboardRepository();
+    _utilityRepository = widget.utilityRepository ?? UtilityRepository();
+    _offlineMapService = widget.offlineMapService ?? ClusterOfflineMapService();
+    _locationService = widget.locationService ?? LocationService();
+    _mapObjectBuilder = widget.mapObjectBuilder ?? ClusterMapObjectBuilder();
+
     _checkOfflineStatus();
     _requestLocationPermission();
-    _initCustomIcons();
-    _loadClusterData();
+    _initCustomIconsAndLoad();
   }
 
-  Future<void> _requestLocationPermission() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+  Future<void> _initCustomIconsAndLoad() async {
+    await _mapObjectBuilder.loadCustomIcons();
+    await _loadClusterData();
+  }
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return;
-      }
-    }
-    
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    } 
+  Future<void> _checkOfflineStatus() async {
+    final offline = await _offlineMapService.checkIsOffline();
+    final file = await _offlineMapService.getOfflineMapFile(widget.clusterId);
 
     if (mounted) {
       setState(() {
-        _hasLocationPermission = true;
+        _isOffline = offline;
+        _offlineMapFile = file;
+      });
+    }
+  }
+
+  Future<void> _requestLocationPermission() async {
+    final hasPermission = await _locationService.hasPermission();
+    if (mounted) {
+      setState(() {
+        _hasLocationPermission = hasPermission;
       });
     }
   }
@@ -115,637 +132,179 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
       await _requestLocationPermission();
       if (!_hasLocationPermission) return;
     }
-    
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high
-      );
-      
-      _mapController!.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: LatLng(position.latitude, position.longitude),
-            zoom: 18.0,
-            tilt: is3DMode ? 60.0 : 0.0,
-          )
-        )
-      );
-    } catch (e) {
-      print('Error getting location: $e');
-    }
-  }
 
-  Future<void> _checkOfflineStatus() async {
-    bool offline = false;
     try {
-      final result = await InternetAddress.lookup('google.com');
-      if (result.isEmpty || result[0].rawAddress.isEmpty) {
-        offline = true;
+      final position = await _locationService.getCurrentLocation();
+      if (position != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: LatLng(position.latitude, position.longitude),
+              zoom: 18.0,
+              tilt: is3DMode ? 60.0 : 0.0,
+            ),
+          ),
+        );
       }
-    } on SocketException catch (_) {
-      offline = true;
-    }
-
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/cluster_map_${widget.clusterId}.png');
-    
-    setState(() {
-      _isOffline = offline;
-      if (file.existsSync()) {
-        _offlineMapFile = file;
-      }
-    });
+    } catch (_) {}
   }
 
   Future<void> _downloadOfflineMap() async {
     if (_mapController == null) return;
     setState(() => _isDownloading = true);
-    
+
     try {
-      final Uint8List? snapshot = await _mapController!.takeSnapshot();
-      if (snapshot != null) {
-        final dir = await getApplicationDocumentsDirectory();
-        final file = File('${dir.path}/cluster_map_${widget.clusterId}.png');
-        await file.writeAsBytes(snapshot);
-        setState(() {
-          _offlineMapFile = file;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Mapa guardado para uso offline exitosamente.'), backgroundColor: Colors.green),
-          );
-        }
+      final file = await _offlineMapService.saveMapSnapshot(_mapController!, widget.clusterId);
+      if (file != null && mounted) {
+        setState(() => _offlineMapFile = file);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mapa guardado para uso offline exitosamente.'), backgroundColor: Colors.green),
+        );
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error al guardar el mapa.'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      setState(() => _isDownloading = false);
+      if (mounted) {
+        setState(() => _isDownloading = false);
+      }
     }
-  }
-
-  Future<void> _initCustomIcons() async {
-    _popIcon = await _createCustomMarker(Icons.business, const Color(0xFF6938ef), 'POP');
-    _nvtIcon = await _createCustomMarker(Icons.dns, const Color(0xFF2fb080), 'NVT');
-    _crewIcon = await _createCustomMarker(Icons.engineering, Colors.orange, 'CREW');
-    if (mounted && !_isLoading) {
-      setState(() {
-        _buildMapObjects();
-      });
-    }
-  }
-
-  Future<BitmapDescriptor> _createCustomMarker(IconData icon, Color color, String label) async {
-    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(pictureRecorder);
-    const double size = 140.0;
-    
-    final Paint paint = Paint()..color = color;
-    final Paint borderPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 6.0
-      ..style = PaintingStyle.stroke;
-
-    canvas.drawCircle(const Offset(size / 2, size / 2 - 20), size / 3, paint);
-    canvas.drawCircle(const Offset(size / 2, size / 2 - 20), size / 3, borderPaint);
-
-    TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
-    textPainter.text = TextSpan(
-      text: String.fromCharCode(icon.codePoint),
-      style: TextStyle(fontSize: 45.0, fontFamily: icon.fontFamily, package: icon.fontPackage, color: Colors.white),
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset((size - textPainter.width) / 2, (size / 2 - 20) - textPainter.height / 2));
-
-    final Paint pillPaint = Paint()..color = Colors.black87;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: const Offset(size / 2, size - 15), width: size - 20, height: 30), const Radius.circular(15)),
-      pillPaint
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: const Offset(size / 2, size - 15), width: size - 20, height: 30), const Radius.circular(15)),
-      borderPaint..strokeWidth = 2.0
-    );
-
-    TextPainter labelPainter = TextPainter(textDirection: TextDirection.ltr);
-    labelPainter.text = TextSpan(text: label, style: const TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold, color: Colors.white));
-    labelPainter.layout();
-    labelPainter.paint(canvas, Offset((size - labelPainter.width) / 2, size - 15 - labelPainter.height / 2));
-
-    final ui.Image image = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
-    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
   }
 
   Future<void> _loadClusterData() async {
     setState(() => _isLoading = true);
-    final api = ApiService();
 
-    try {
-      final popData = await api.get('/pops');
-      final allPops = (popData as List).map((e) => Pop.fromJson(e)).toList();
-      _pops = allPops.where((p) => p.clusterId == widget.clusterId).toList();
-      // If none match, just show all pops for debugging if needed, but strict is better
-      if (_pops.isEmpty) {
-        _pops = allPops; // Fallback so user sees nodes
-      }
-      _nvts = _pops.expand((p) => p.nvts).toList();
-    } catch (e) {
-      print('Error loading pops: $e');
-    }
+    final pops = await _repository.fetchPops(widget.clusterId);
+    final segments = await _repository.fetchSegments(widget.projectId);
+    final utilities = await _utilityRepository.fetchUtilities();
 
-    try {
-      final segmentData = await api.get('/projects/${widget.projectId}/segments');
-      final allSegments = (segmentData as List).map((e) => Segment.fromJson(e)).toList();
-      _segments = allSegments;
-    } catch (e) {
-      print('Error loading segments: $e');
-    }
+    _pops = pops;
+    _nvts = pops.expand((p) => p.nvts).toList();
+    _segments = segments;
+    _utilities = utilities;
 
-    try {
-      final utilsData = await api.get('/v1/utilities');
-      final allUtils = (utilsData as List).map((e) => UtilityLine.fromJson(e)).toList();
-      _utilities = allUtils;
-    } catch (e) {
-      print('Error loading utilities: $e');
-    }
+    _stats = {
+      'POP': _pops.length,
+      'Netzverteiler': _nvts.length,
+      'Segments': _segments.length,
+      'Utilities': _utilities.length,
+    };
 
-    setState(() {
-      groupedElements = {
-        'POP': _pops,
-        'Netzverteiler': _nvts,
-        'Segments': _segments,
-        'Utilities': _utilities,
-      };
-      stats = {
-        'POP': _pops.length,
-        'Netzverteiler': _nvts.length,
-        'Segments': _segments.length,
-        'Utilities': _utilities.length,
-      };
-      _isLoading = false;
-      _buildMapObjects();
-    });
-  }
+    _groupedItems = _buildGroupedItems();
+    _rebuildMap();
 
-  void _buildMapObjects() {
-    final markers = <Marker>{};
-    final polylines = <Polyline>{};
-
-    for (var pop in _pops) {
-      if (pop.latitude != null && pop.longitude != null) {
-        markers.add(Marker(
-          markerId: MarkerId('pop_${pop.id}'),
-          position: LatLng(pop.latitude!, pop.longitude!),
-          icon: _popIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-          infoWindow: InfoWindow(title: pop.name, snippet: 'POP Node'),
-        ));
-      }
-    }
-
-    for (var nvt in _nvts) {
-      if (nvt.latitude != null && nvt.longitude != null) {
-        markers.add(Marker(
-          markerId: MarkerId('nvt_${nvt.id}'),
-          position: LatLng(nvt.latitude!, nvt.longitude!),
-          icon: _nvtIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: InfoWindow(title: nvt.identifier, snippet: 'Netzverteiler'),
-        ));
-      }
-    }
-
-    for (var seg in _segments) {
-      if (seg.geometry.isNotEmpty) {
-        final points = seg.geometry.map((g) => LatLng(g.latitude, g.longitude)).toList();
-        
-        // Outer thick outline for contrast
-        polylines.add(Polyline(
-          polylineId: PolylineId('seg_out_${seg.id}'),
-          points: points,
-          color: const Color(0xFF131415), // Very dark border
-          width: 10,
-          zIndex: 1,
-          consumeTapEvents: true,
-          onTap: () => _onSegmentTapped(seg),
-        ));
-        
-        // Inner bright core
-        polylines.add(Polyline(
-          polylineId: PolylineId('seg_in_${seg.id}'),
-          points: points,
-          color: const Color(0xFF00E5FF), // Neon Cyan (High visibility on satellite)
-          width: 5,
-          zIndex: 2,
-          consumeTapEvents: true,
-          onTap: () => _onSegmentTapped(seg),
-        ));
-      }
-    }
-    for (var util in _utilities) {
-      if (util.geometry.isNotEmpty) {
-        try {
-          final points = util.geometry.map((g) {
-            double lat = (g['lat'] ?? g['latitude'] as num).toDouble();
-            double lng = (g['lng'] ?? g['longitude'] as num).toDouble();
-            return LatLng(lat, lng);
-          }).toList();
-          
-          Color utilColor = Colors.grey;
-          if (util is WaterPipe) utilColor = Colors.blueAccent;
-          else if (util is GasPipe) utilColor = Colors.yellowAccent;
-          else if (util is ElectricityCable) utilColor = Colors.redAccent;
-
-          polylines.add(Polyline(
-            polylineId: PolylineId('util_${util.utilityType}_${util.id}'),
-            points: points,
-            color: utilColor,
-            width: 4,
-            patterns: [PatternItem.dash(20), PatternItem.gap(10)], // Líneas punteadas
-            zIndex: 0,
-          ));
-        } catch (e) {
-          print('Error drawing utility polyline: $e');
-        }
-      }
-    }
-
-    for (var seg in _segments) {
-      if (seg.geometry.isNotEmpty) {
-        final points = seg.geometry.map((g) => LatLng(g.latitude, g.longitude)).toList();
-
-        // Display Crew Marker if crew is assigned or in progress
-        if (seg.assignedCrewId != null || seg.currentState.toString().toUpperCase().contains('INPROGRESS')) {
-          final midPoint = points[points.length ~/ 2];
-          markers.add(Marker(
-            markerId: MarkerId('crew_${seg.id}'),
-            position: midPoint,
-            icon: _crewIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-            zIndex: 10,
-            onTap: () => _onCrewMarkerTapped(seg),
-          ));
-          
-          final machineryPoint = LatLng(midPoint.latitude, midPoint.longitude + 0.00015);
-          markers.add(Marker(
-            markerId: MarkerId('machinery_${seg.id}'),
-            position: machineryPoint,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-            zIndex: 9,
-            onTap: () => _onMachineryMarkerTapped(seg),
-          ));
-        }
-      }
-    }
-
-    if (tempMarker != null) {
-      markers.add(Marker(
-        markerId: const MarkerId('temp_marker'),
-        position: tempMarker!,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      ));
-    }
-
-    _markers = markers;
-    _polylines = polylines;
-
-    _markers = markers;
-    _polylines = polylines;
-
-    if (_initialCamera == null) {
-      if (_nvts.isNotEmpty && _nvts.first.latitude != null) {
-        _initialCamera = CameraPosition(target: LatLng(_nvts.first.latitude!, _nvts.first.longitude!), zoom: 16.0);
-      } else if (_segments.isNotEmpty && _segments.first.geometry.isNotEmpty) {
-        _initialCamera = CameraPosition(target: LatLng(_segments.first.geometry.first.latitude, _segments.first.geometry.first.longitude), zoom: 16.0);
-      } else {
-        _initialCamera = const CameraPosition(target: LatLng(52.5200, 13.4050), zoom: 12.0);
-      }
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 
-  Color _getColorForType(String type) {
-    switch (type) {
-      case 'POP': return const Color(0xFF6938ef);
-      case 'Netzverteiler': return const Color(0xFF2fb080);
-      case 'Segments': return const Color(0xFFfbbf24);
-      case 'Acometidas': return const Color(0xFFf59e0b);
-      default: return Colors.white;
-    }
+  Map<String, List<ClusterElementItem>> _buildGroupedItems() {
+    return {
+      'POP': _pops.map((pop) {
+        return ClusterElementItem(
+          id: pop.id,
+          name: pop.name,
+          status: 'ACTIVE',
+          type: ClusterElementType.pop,
+          originalModel: pop,
+        );
+      }).toList(),
+      'Netzverteiler': _nvts.map((nvt) {
+        return ClusterElementItem(
+          id: nvt.id,
+          name: nvt.identifier,
+          status: 'ACTIVE',
+          type: ClusterElementType.netzverteiler,
+          originalModel: nvt,
+        );
+      }).toList(),
+      'Segments': _segments.map((seg) {
+        return ClusterElementItem(
+          id: seg.id,
+          name: 'Segment (length: ${seg.length ?? 0}m)',
+          status: seg.currentState.name.toUpperCase(),
+          type: ClusterElementType.segments,
+          originalModel: seg,
+          onTap: () => _onSegmentTapped(seg),
+        );
+      }).toList(),
+      'Utilities': UtilityAdapter.toElementItems(_utilities, context: context),
+    };
+  }
+
+  void _rebuildMap() {
+    _mapData = _mapObjectBuilder.build(
+      pops: _pops,
+      nvts: _nvts,
+      segments: _segments,
+      utilities: _utilities,
+      tempMarker: tempMarker,
+      onSegmentTapped: _onSegmentTapped,
+      onCrewTapped: _onCrewMarkerTapped,
+      onMachineryTapped: _onMachineryMarkerTapped,
+      onUtilityTapped: _onUtilityTapped,
+      currentInitialCamera: _mapData.initialCamera,
+    );
   }
 
   void _onMapTapped(LatLng position) {
     if (isMapEditMode && activeDrawTool != null) {
       setState(() {
         tempMarker = position;
-        _buildMapObjects();
+        _rebuildMap();
       });
       _showSaveNodeForm();
     }
   }
 
   void _onCrewMarkerTapped(Segment seg) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1C1D21),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundColor: Colors.orange.withOpacity(0.2),
-                      child: const Icon(Icons.engineering, color: Colors.orange, size: 28),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Crew ID: ${seg.assignedCrewId ?? "Unknown"}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                          Text('Working on Segment ${seg.id}', style: const TextStyle(color: Colors.white54, fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6938ef),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => CrewDetailScreen(crewId: seg.assignedCrewId?.toString() ?? "1")));
-                    },
-                    child: const Text('VIEW CREW DETAILS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    CrewInfoSheet.show(context, seg);
   }
 
   void _onMachineryMarkerTapped(Segment seg) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1C1D21),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundColor: Colors.yellow.withOpacity(0.2),
-                      child: const Text('🚜', style: TextStyle(fontSize: 28)),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Machinery - Crew ${seg.assignedCrewId ?? "Unknown"}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                          Text('Working on Segment ${seg.id}', style: const TextStyle(color: Colors.white54, fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                const Text('Assigned Equipment', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.build, color: Colors.yellow, size: 20),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text('Excavadora Cat 320', style: TextStyle(color: Colors.white)),
-                          Text('EXC-CAT-320 • IN_USE', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.settings, color: Colors.yellow, size: 20),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text('Taladro de Calle', style: TextStyle(color: Colors.white)),
-                          Text('DRL-DITCH-01 • IN_USE', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6938ef),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const MachineryListScreen()));
-                    },
-                    child: const Text('VIEW FULL INVENTORY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    MachineryInfoSheet.show(context, seg);
+  }
+
+  void _onUtilityTapped(UtilityLine util) {
+    UtilityInfoSheet.show(context, util);
   }
 
   void _onSegmentTapped(Segment seg) {
-    setState(() {
-      _selectedSegmentId = seg.id;
-      _buildMapObjects();
-    });
-    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => SegmentEditBottomSheet(
         segment: seg.toJson(),
-        onSaved: () {
-          _loadClusterData();
-        },
+        onSaved: _loadClusterData,
       ),
-    ).whenComplete(() {
-      setState(() {
-        _selectedSegmentId = null;
-        _buildMapObjects();
-      });
-    });
-  }
-
-  void _showSaveNodeForm() {
-    String? selectedPopId;
-    
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C1D21),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24, 
-                left: 24, 
-                right: 24, 
-                top: 24
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Save $activeDrawTool', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  TextField(
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Name / Identifier',
-                      labelStyle: TextStyle(color: Colors.white54),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white10)),
-                      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.greenAccent)),
-                    ),
-                    onChanged: (val) => newNodeData['name'] = val,
-                  ),
-                  if (activeDrawTool == 'Netzverteiler') ...[
-                    const SizedBox(height: 24),
-                    const Text('POP (SELECT TO ASSIGN)', style: TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    if (_pops.isEmpty)
-                      const Text('No POPs available in this cluster.', style: TextStyle(color: Colors.white30))
-                    else
-                      ..._pops.map((pop) {
-                        final isSelected = selectedPopId == pop.id;
-                        return GestureDetector(
-                          onTap: () => setModalState(() => selectedPopId = pop.id),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF6938ef).withOpacity(0.2) : Colors.transparent,
-                              border: Border.all(color: isSelected ? const Color(0xFF6938ef) : Colors.white10),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.location_on, color: isSelected ? const Color(0xFF6938ef) : Colors.white54, size: 20),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(pop.name, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 4),
-                                      Text(pop.locationAddress, style: const TextStyle(color: Colors.white30, fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                  ],
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6938ef),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    onPressed: () async {
-                      if (activeDrawTool == 'Netzverteiler') {
-                        newNodeData['popId'] = selectedPopId;
-                      }
-                      Navigator.pop(context);
-                      await _saveNode();
-                    },
-                    child: const Text('SAVE ELEMENT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  )
-                ],
-              ),
-            );
-          }
-        );
-      }
     );
   }
 
-  Future<void> _saveNode() async {
+  void _showSaveNodeForm() {
+    SaveNodeBottomSheet.show(
+      context,
+      activeDrawTool: activeDrawTool ?? '',
+      pops: _pops,
+      onSave: (data) => _saveNode(data),
+    );
+  }
+
+  Future<void> _saveNode(SaveNodeData data) async {
     if (tempMarker == null) return;
     setState(() => _isLoading = true);
-    
-    try {
-      double? elevation;
-      try {
-        final url = Uri.parse('https://maps.googleapis.com/maps/api/elevation/json?locations=${tempMarker!.latitude},${tempMarker!.longitude}&key=AIzaSyClkdHOLWnKrRwkAHE5_aJyw-xboEnA7dw');
-        final response = await http.get(url);
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['status'] == 'OK' && data['results'] != null && data['results'].isNotEmpty) {
-            elevation = data['results'][0]['elevation']?.toDouble();
-          }
-        }
-      } catch (e) {
-        print('Error fetching elevation: $e');
-      }
 
-      final api = ApiService();
+    try {
+      final elevation = await _repository.fetchElevation(tempMarker!);
+
       if (activeDrawTool == 'POP') {
         final newPop = Pop(
           id: '',
           clusterId: widget.clusterId,
-          name: newNodeData['name'] ?? 'New POP',
+          name: data.name.isNotEmpty ? data.name : 'New POP',
           locationAddress: 'Lat: ${tempMarker!.latitude}, Lng: ${tempMarker!.longitude}',
           latitude: tempMarker!.latitude,
           longitude: tempMarker!.longitude,
@@ -753,21 +312,21 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           maxCapacityPorts: 100,
           nvts: [],
         );
-        await api.post('/pops', newPop.toJson());
+        await _repository.savePop(newPop);
       } else if (activeDrawTool == 'Netzverteiler') {
         final newNvt = Netzverteiler(
           id: '',
-          identifier: newNodeData['name'] ?? 'New NVT',
+          identifier: data.name.isNotEmpty ? data.name : 'New NVT',
           latitude: tempMarker!.latitude,
           longitude: tempMarker!.longitude,
           elevation: elevation,
-          popId: newNodeData['popId'] ?? (_pops.isNotEmpty ? _pops.first.id : null),
+          popId: data.popId ?? (_pops.isNotEmpty ? _pops.first.id : null),
         );
-        await api.post('/netzverteilers', newNvt.toJson());
+        await _repository.saveNetzverteiler(newNvt);
       } else if (activeDrawTool == 'Segment' || activeDrawTool == 'Acometida') {
         final newSeg = Segment(
           id: '',
-          streetName: newNodeData['name'] ?? 'New Segment',
+          streetName: data.name.isNotEmpty ? data.name : 'New Segment',
           streetType: 'UNKNOWN',
           workType: WorkType.trenching,
           currentState: WorkflowState.plan,
@@ -776,57 +335,92 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           geometry: [
             GeometryPoint(latitude: tempMarker!.latitude, longitude: tempMarker!.longitude),
             GeometryPoint(latitude: tempMarker!.latitude + 0.0005, longitude: tempMarker!.longitude + 0.0005),
-          ]
+          ],
         );
-        await api.post('/projects/${widget.projectId}/segments', newSeg.toJson());
+        await _repository.saveSegment(widget.projectId, newSeg);
       }
-    } catch (e) {
-      print('Error saving node: $e');
-    }
+    } catch (_) {}
 
     setState(() {
       isMapEditMode = false;
       activeDrawTool = null;
       tempMarker = null;
-      newNodeData = {};
     });
-    
-    _loadClusterData();
+
+    await _loadClusterData();
   }
 
-
-  void _openStreetView() async {
-    final center = _initialCamera?.target ?? const LatLng(52.5200, 13.4050);
+  Future<void> _openStreetView() async {
+    final center = _mapData.initialCamera?.target ?? const LatLng(52.5200, 13.4050);
     final url = Uri.parse('google.streetview:cbll=${center.latitude},${center.longitude}');
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      // Fallback
-      final webUrl = Uri.parse('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${center.latitude},${center.longitude}');
+    } catch (_) {
+      final webUrl = Uri.parse(
+        'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${center.latitude},${center.longitude}',
+      );
       try {
         await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-      } catch (e2) {
-        print('Could not launch Street View: $e2');
-      }
+      } catch (_) {}
     }
   }
 
   void _toggle3D() {
-    setState(() {
-      is3DMode = !is3DMode;
-    });
-    if (_mapController != null && _initialCamera != null) {
+    setState(() => is3DMode = !is3DMode);
+    if (_mapController != null && _mapData.initialCamera != null) {
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
-            target: _initialCamera!.target,
+            target: _mapData.initialCamera!.target,
             zoom: 16.0,
             tilt: is3DMode ? 60.0 : 0.0,
             bearing: is3DMode ? 45.0 : 0.0,
-          )
-        )
+          ),
+        ),
       );
     }
+  }
+
+  void _showAddNodeBottomSheet() {
+    AddNodeTypeSheet.show(
+      context,
+      onAddPop: () {
+        setState(() {
+          isMapEditMode = true;
+          activeDrawTool = 'POP';
+        });
+      },
+      onAddNetzverteiler: () {
+        setState(() {
+          isMapEditMode = true;
+          activeDrawTool = 'Netzverteiler';
+        });
+      },
+      onAddSegment: () async {
+        double? lat, lng, zoom;
+        if (_mapController != null) {
+          try {
+            final bounds = await _mapController!.getVisibleRegion();
+            lat = (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
+            lng = (bounds.northeast.longitude + bounds.southwest.longitude) / 2;
+            zoom = await _mapController!.getZoomLevel();
+          } catch (_) {}
+        }
+        String route = '/create_segment/${widget.projectId}';
+        if (lat != null && lng != null && zoom != null) {
+          route += '?lat=$lat&lng=$lng&zoom=$zoom';
+        }
+        if (mounted) {
+          context.push(route);
+        }
+      },
+      onAddAcometida: () {
+        setState(() {
+          isMapEditMode = true;
+          activeDrawTool = 'Acometida';
+        });
+      },
+    );
   }
 
   Widget _buildMapArea() {
@@ -840,169 +434,46 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
           )
         else
           InteractiveMapView(
-            markers: _markers,
-            polylines: _polylines,
-            initialCameraPosition: _initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
+            markers: _mapData.markers,
+            polylines: _mapData.polylines,
+            initialCameraPosition: _mapData.initialCamera ?? const CameraPosition(target: LatLng(52.52, 13.40), zoom: 12),
             onTap: _onMapTapped,
             onMapCreated: (controller) => _mapController = controller,
             myLocationEnabled: _hasLocationPermission,
             myLocationButtonEnabled: _hasLocationPermission,
           ),
-          
-        if (_isOffline && _offlineMapFile != null)
-          Positioned(
-            top: 40,
-            left: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
-              child: const Row(
-                children: [
-                  Icon(Icons.wifi_off, color: Colors.orangeAccent, size: 16),
-                  SizedBox(width: 8),
-                  Text('MODO OFFLINE', style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-          ),
-        
-        // Action Buttons on Map (3D and Panel Toggle)
-        Positioned(
-          top: 100,
-          right: 16,
-          child: Column(
-            children: [
-              Consumer(
-                builder: (context, ref, child) {
-                  final arState = ref.watch(arCompanionProvider);
-                  return FloatingActionButton(
-                    heroTag: 'arCompanionBtn',
-                    mini: true,
-                    backgroundColor: arState.isBroadcasting ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
-                    onPressed: () async {
-                      final notifier = ref.read(arCompanionProvider.notifier);
-                      // Asignar el ID de proyecto actual (parseado a int)
-                      int? projId = int.tryParse(widget.projectId);
-                      if (projId != null) notifier.setProjectId(projId);
-                      
-                      if (arState.isBroadcasting) {
-                        notifier.stopBroadcasting();
-                      } else {
-                        final error = await notifier.startBroadcasting(arState.targetIp, arState.targetPort);
-                        if (error != null && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(error),
-                            backgroundColor: Colors.red,
-                          ));
-                        }
-                      }
-                    },
-                    child: Icon(
-                      arState.isBroadcasting ? Icons.cast_connected : Icons.cast, 
-                      color: arState.isBroadcasting ? Colors.white : Colors.blueAccent, 
-                      size: 20
-                    ),
-                  );
-                }
-              ),
-              const SizedBox(height: 12),
-              FloatingActionButton(
-                heroTag: 'locateMeBtn',
-                mini: true,
-                backgroundColor: const Color(0xFF1C1D21),
-                onPressed: _centerToMyLocation,
-                child: const Icon(Icons.my_location, color: Colors.blueAccent, size: 20),
-              ),
-              const SizedBox(height: 12),
-              FloatingActionButton(
-                heroTag: 'zoomInBtn',
-                mini: true,
-                backgroundColor: const Color(0xFF1C1D21),
-                onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
-                child: const Icon(Icons.add, color: Colors.white, size: 20),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton(
-                heroTag: 'zoomOutBtn',
-                mini: true,
-                backgroundColor: const Color(0xFF1C1D21),
-                onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
-                child: const Icon(Icons.remove, color: Colors.white, size: 20),
-              ),
-              const SizedBox(height: 24),
-              FloatingActionButton(
-                heroTag: 'svBtn',
-                mini: true,
-                backgroundColor: const Color(0xFF1C1D21),
-                onPressed: _openStreetView,
-                child: const Icon(Icons.directions_walk, color: Colors.white, size: 20),
-              ),
-              const SizedBox(height: 12),
-              FloatingActionButton(
-                heroTag: '3dBtn',
-                mini: true,
-                backgroundColor: is3DMode ? const Color(0xFF6938ef) : const Color(0xFF1C1D21),
-                onPressed: _toggle3D,
-                child: const Icon(Icons.threed_rotation, color: Colors.white, size: 20),
-              ),
-              const SizedBox(height: 12),
-              FloatingActionButton(
-                heroTag: 'panelBtn',
-                mini: true,
-                backgroundColor: isPanelVisible ? const Color(0xFF1C1D21) : const Color(0xFF6938ef),
-                onPressed: () => setState(() => isPanelVisible = !isPanelVisible),
-                child: Icon(isPanelVisible ? Icons.visibility_off : Icons.visibility, color: Colors.white, size: 20),
-              ),
-              if (!_isOffline) ...[
-                const SizedBox(height: 12),
-                FloatingActionButton(
-                  heroTag: 'downloadMapBtn',
-                  mini: true,
-                  backgroundColor: _isDownloading ? Colors.grey : const Color(0xFF1C1D21),
-                  onPressed: _isDownloading ? null : _downloadOfflineMap,
-                  child: _isDownloading
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.download_for_offline, color: Colors.greenAccent, size: 20),
-                ),
-              ],
-            ],
-          ),
+
+        ClusterMapControls(
+          projectId: widget.projectId,
+          is3DMode: is3DMode,
+          isPanelVisible: isPanelVisible,
+          isOffline: _isOffline,
+          isDownloading: _isDownloading,
+          isMapEditMode: isMapEditMode,
+          activeDrawTool: activeDrawTool,
+          onMyLocation: _centerToMyLocation,
+          onZoomIn: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
+          onZoomOut: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
+          onStreetView: _openStreetView,
+          onToggle3D: _toggle3D,
+          onTogglePanel: () => setState(() => isPanelVisible = !isPanelVisible),
+          onDownloadOfflineMap: _downloadOfflineMap,
+          onCancelDraw: () {
+            setState(() {
+              isMapEditMode = false;
+              activeDrawTool = null;
+              tempMarker = null;
+              _rebuildMap();
+            });
+          },
         ),
 
-        // Active Draw Tool indicator
-        if (isMapEditMode && activeDrawTool != null)
-          Positioned(
-            top: 40, left: 16, right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6938ef),
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Tap on the map to place $activeDrawTool', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        isMapEditMode = false;
-                        activeDrawTool = null;
-                        tempMarker = null;
-                        _buildMapObjects();
-                      });
-                    },
-                    child: const Icon(Icons.close, color: Colors.white),
-                  )
-                ],
-              ),
-            ),
-          ),
-        // Overlay gradient for seamless transition
         if (isPanelVisible)
           Positioned(
-            bottom: 0, left: 0, right: 0, height: 80,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 80,
             child: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -1026,7 +497,7 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildStatsGrid(),
+            ClusterStatsGrid(stats: _stats),
             const SizedBox(height: 24),
             const Text(
               'NETWORK NODES BREAKDOWN',
@@ -1038,8 +509,12 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
               ),
             ),
             const SizedBox(height: 12),
-            _buildAccordionList(),
-            const SizedBox(height: 80), // Padding for FAB
+            ClusterNodeAccordion(
+              groupedElements: _groupedItems,
+              expandedGroup: _expandedGroup,
+              onToggleGroup: (group) => setState(() => _expandedGroup = group),
+            ),
+            const SizedBox(height: 80),
           ],
         ),
       ),
@@ -1064,419 +539,72 @@ class _ClusterAreaDashboardScreenState extends State<ClusterAreaDashboardScreen>
             end: Alignment.bottomCenter,
           ),
         ),
-        child: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth > 800) {
-                  // Tablet / Desktop view (Split horizontally)
-                  return Row(
-                    children: [
-                      Expanded(
-                        flex: 6,
-                        child: _buildMapArea(),
-                      ),
-                      Container(
-                        width: 1,
-                        color: Colors.white.withOpacity(0.1),
-                      ),
-                      Expanded(
-                        flex: 4,
-                        child: _buildDataPanel(),
-                      ),
-                    ],
-                  );
-                } else {
-                  // Phone view (Map on top, Draggable sheet for data)
-                  return Stack(
-                    children: [
-                      // Full screen map
-                      Positioned.fill(
-                        child: _buildMapArea(),
-                      ),
-                      // Draggable bottom sheet
-                      if (isPanelVisible)
-                        DraggableScrollableSheet(
-                          initialChildSize: 0.45,
-                          minChildSize: 0.15,
-                          maxChildSize: 0.9,
-                          builder: (context, scrollController) {
-                            return Container(
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF131415),
-                                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black54,
-                                    blurRadius: 10,
-                                    offset: Offset(0, -5),
-                                  )
-                                ],
-                              ),
-                              child: Column(
-                                children: [
-                                  // Drag handle
-                                  Center(
-                                    child: Container(
-                                      margin: const EdgeInsets.symmetric(vertical: 12),
-                                      width: 40,
-                                      height: 4,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white30,
-                                        borderRadius: BorderRadius.circular(2),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth > 800) {
+                    return Row(
+                      children: [
+                        Expanded(flex: 6, child: _buildMapArea()),
+                        Container(width: 1, color: Colors.white.withValues(alpha: 0.1)),
+                        Expanded(flex: 4, child: _buildDataPanel()),
+                      ],
+                    );
+                  } else {
+                    return Stack(
+                      children: [
+                        Positioned.fill(child: _buildMapArea()),
+                        if (isPanelVisible)
+                          DraggableScrollableSheet(
+                            initialChildSize: 0.45,
+                            minChildSize: 0.15,
+                            maxChildSize: 0.9,
+                            builder: (context, scrollController) {
+                              return Container(
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF131415),
+                                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black54,
+                                      blurRadius: 10,
+                                      offset: Offset(0, -5),
+                                    )
+                                  ],
+                                ),
+                                child: Column(
+                                  children: [
+                                    Center(
+                                      child: Container(
+                                        margin: const EdgeInsets.symmetric(vertical: 12),
+                                        width: 40,
+                                        height: 4,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white30,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  Expanded(
-                                    child: _buildDataPanel(scrollController: scrollController),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                    ],
-                  );
-                }
-              },
-            ),
+                                    Expanded(
+                                      child: _buildDataPanel(scrollController: scrollController),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    );
+                  }
+                },
+              ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddNodeBottomSheet,
-        backgroundColor: const Color(0xFF6938ef),
+        backgroundColor: const Color(0xFF6938EF),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Add Node', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      ),
-    );
-  }
-
-  void _showAddNodeBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1C1D21),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Add Network Element', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-                _buildAddListTile(Icons.router, Colors.purpleAccent, 'Add POP', () {
-                  Navigator.pop(context);
-                  setState(() {
-                    isMapEditMode = true;
-                    activeDrawTool = 'POP';
-                  });
-                }),
-                _buildAddListTile(Icons.settings_input_component, Colors.orangeAccent, 'Add Netzverteiler', () {
-                  Navigator.pop(context);
-                  setState(() {
-                    isMapEditMode = true;
-                    activeDrawTool = 'Netzverteiler';
-                  });
-                }),
-                _buildAddListTile(Icons.linear_scale, Colors.greenAccent, 'Add Segment', () async {
-                  Navigator.pop(context);
-                  double? lat, lng, zoom;
-                  if (_mapController != null) {
-                    try {
-                      final bounds = await _mapController!.getVisibleRegion();
-                      lat = (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
-                      lng = (bounds.northeast.longitude + bounds.southwest.longitude) / 2;
-                      zoom = await _mapController!.getZoomLevel();
-                    } catch (e) {
-                      print('Error getting map center: $e');
-                    }
-                  }
-                  String route = '/create_segment/${widget.projectId}';
-                  if (lat != null && lng != null && zoom != null) {
-                    route += '?lat=$lat&lng=$lng&zoom=$zoom';
-                  }
-                  // Navigate to the custom vector drawing screen for segments
-                  context.push(route);
-                }),
-                _buildAddListTile(Icons.home, Colors.blueAccent, 'Add Acometida', () {
-                  Navigator.pop(context);
-                  setState(() {
-                    isMapEditMode = true;
-                    activeDrawTool = 'Acometida';
-                  });
-                }),
-              ],
-            ),
-          ),
-        );
-      }
-    );
-  }
-
-  Widget _buildAddListTile(IconData icon, Color color, String title, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon, color: color),
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      onTap: onTap,
-    );
-  }
-
-  Widget _buildStatsGrid() {
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 2.5,
-      children: [
-        _buildStatCard('POPs', stats['POP'] ?? 0, _getColorForType('POP')),
-        _buildStatCard('Netzverteiler', stats['Netzverteiler'] ?? 0, _getColorForType('Netzverteiler')),
-        _buildStatCard('Segments', stats['Segments'] ?? 0, _getColorForType('Segments')),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(String title, int count, Color color) {
-    return GlassCard(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: color.withOpacity(0.3)),
-            ),
-            child: Icon(Icons.circle, color: color, size: 12),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 8,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                count.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAccordionList() {
-    return Column(
-      children: groupedElements.entries.map((entry) {
-        final groupName = entry.key;
-        final items = entry.value;
-        final isExpanded = expandedGroup == groupName;
-        final color = _getColorForType(groupName);
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.02),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: [
-              InkWell(
-                onTap: () {
-                  setState(() {
-                    expandedGroup = isExpanded ? '' : groupName;
-                  });
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Icon(Icons.circle, color: items.isNotEmpty ? color : Colors.white, size: 10),
-                      const SizedBox(width: 12),
-                      Text(
-                        groupName.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${items.length}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 10),
-                        ),
-                      ),
-                      const Spacer(),
-                      Icon(
-                        isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                        color: Colors.white54,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (isExpanded)
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.2),
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(12),
-                      bottomRight: Radius.circular(12),
-                    ),
-                  ),
-                  child: items.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Center(
-                            child: Text(
-                              'NO NODES FOUND',
-                              style: TextStyle(color: Colors.white30, fontSize: 10, letterSpacing: 1),
-                            ),
-                          ),
-                        )
-                      : Column(
-                          children: items.map((element) {
-                            return _buildNodeItem(element);
-                          }).toList(),
-                        ),
-                ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildNodeItem(dynamic element) {
-    String name = 'Unknown';
-    String id = '';
-    String status = 'ACTIVE';
-
-    if (element is Pop) {
-      name = element.name;
-      id = element.id;
-    } else if (element is Netzverteiler) {
-      name = element.identifier;
-      id = element.id;
-    } else if (element is Segment) {
-      name = 'Segment (length: ${element.length ?? 0}m)';
-      id = element.id;
-      status = element.currentState.name.toUpperCase();
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.white.withOpacity(0.02)),
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            if (element is Segment) {
-              _onSegmentTapped(element);
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'ID: $id',
-                        style: const TextStyle(
-                          color: Colors.white30,
-                          fontSize: 10,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildNodeStatusBadge(status),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNodeStatusBadge(String status) {
-    Color bgColor;
-    Color textColor;
-    
-    switch (status) {
-      case 'ACTIVE':
-        bgColor = const Color(0xFF2fb080).withOpacity(0.1);
-        textColor = const Color(0xFF2fb080);
-        break;
-      case 'ERROR':
-        bgColor = const Color(0xFFef4444).withOpacity(0.1);
-        textColor = const Color(0xFFef4444);
-        break;
-      case 'PLANNED':
-      default:
-        bgColor = Colors.white.withOpacity(0.05);
-        textColor = Colors.white54;
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: textColor.withOpacity(0.2)),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        style: TextStyle(
-          color: textColor,
-          fontSize: 8,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1,
-        ),
       ),
     );
   }
