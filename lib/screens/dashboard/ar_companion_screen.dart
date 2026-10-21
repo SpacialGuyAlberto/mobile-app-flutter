@@ -60,7 +60,7 @@ class _ARCompanionScreenState extends ConsumerState<ARCompanionScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Transmite en tiempo real el GPS y orientación de tu teléfono por red local (UDP) a las gafas Quest 3.',
+              'Transmite en tiempo real el GPS de tu teléfono por red local (UDP) a las gafas Quest 3.',
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 20),

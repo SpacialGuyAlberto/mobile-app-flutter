@@ -44,3 +44,16 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# ==============================================================================
+# Sensitive, Credentials & Environment Configuration Files
+# ==============================================================================
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.key
+*.pem
+*.jks
+*.keystore

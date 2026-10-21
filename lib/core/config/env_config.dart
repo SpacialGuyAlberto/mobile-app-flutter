@@ -2,11 +2,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 class EnvConfig {
-  static String laptopIp = '172.20.10.2';
+  static String laptopIp = '192.168.178.57';
   static int backendPort = 8080;
-  static String backendUrl = 'http://172.20.10.2:8080/api';
+  static String backendUrl = 'http://192.168.178.57:8080/api';
 
-  static String glassesIp = '172.20.10.5';
+  static String glassesIp = '192.168.178.64';
   static int headsetPort = 8000;
 
   static bool _isLoaded = false;

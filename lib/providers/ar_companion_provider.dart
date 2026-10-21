@@ -4,10 +4,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../core/config/env_config.dart';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_compass/flutter_compass.dart';
 
 final arCompanionProvider = StateNotifierProvider<ARCompanionNotifier, ARCompanionState>((ref) {
   return ARCompanionNotifier();
@@ -22,19 +20,17 @@ class ARCompanionState {
   final String? projectName;
   final double? currentLat;
   final double? currentLng;
-  final double? currentHeading;
   final double manualRotationOffset;
 
   ARCompanionState({
     this.isBroadcasting = false,
-    this.targetIp = '172.20.10.5',
+    this.targetIp = '192.168.178.64',
     this.targetPort = 8000,
     this.lastMessage = '',
     this.projectId,
     this.projectName,
     this.currentLat,
     this.currentLng,
-    this.currentHeading,
     this.manualRotationOffset = 0.0,
   });
 
@@ -47,7 +43,6 @@ class ARCompanionState {
     String? projectName,
     double? currentLat,
     double? currentLng,
-    double? currentHeading,
     double? manualRotationOffset,
   }) {
     return ARCompanionState(
@@ -59,7 +54,6 @@ class ARCompanionState {
       projectName: projectName ?? this.projectName,
       currentLat: currentLat ?? this.currentLat,
       currentLng: currentLng ?? this.currentLng,
-      currentHeading: currentHeading ?? this.currentHeading,
       manualRotationOffset: manualRotationOffset ?? this.manualRotationOffset,
     );
   }
@@ -77,23 +71,33 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
 
   Future<void> loadConfig() async {
     await EnvConfig.init();
-    state = state.copyWith(
-      targetIp: EnvConfig.glassesIp,
-      targetPort: EnvConfig.headsetPort,
-    );
+    String defaultIp = EnvConfig.glassesIp;
+    int defaultPort = EnvConfig.headsetPort;
+
     try {
       final file = await _getConfigFile();
       if (await file.exists()) {
         final content = await file.readAsString();
         final data = jsonDecode(content);
         if (data['targetIp'] != null && data['targetIp'].toString().trim().isNotEmpty) {
-          state = state.copyWith(
-            targetIp: data['targetIp'].toString().trim(),
-            targetPort: data['targetPort'] != null ? int.tryParse(data['targetPort'].toString()) ?? EnvConfig.headsetPort : EnvConfig.headsetPort,
-          );
+          final savedIp = data['targetIp'].toString().trim();
+          // If the saved IP is the legacy hotspot IP 172.20.10.5 but EnvConfig specifies 192.168.178.64, prioritize EnvConfig
+          if (savedIp == '172.20.10.5' && defaultIp != '172.20.10.5') {
+            defaultIp = EnvConfig.glassesIp;
+          } else {
+            defaultIp = savedIp;
+          }
+          if (data['targetPort'] != null) {
+            defaultPort = int.tryParse(data['targetPort'].toString()) ?? defaultPort;
+          }
         }
       }
     } catch (_) {}
+
+    state = state.copyWith(
+      targetIp: defaultIp,
+      targetPort: defaultPort,
+    );
   }
 
   Future<void> saveConfig(String ip, int port) async {
@@ -104,12 +108,10 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
   }
 
   StreamSubscription<Position>? _positionSubscription;
-  StreamSubscription<CompassEvent>? _compassSubscription;
   RawDatagramSocket? _socket;
   
   double? _lastGoogleElevation;
   Position? _lastElevationPosition;
-  double _lastCompassHeading = 0.0;
   bool _forceCalibrationFlag = false;
 
   void setProjectId(int? id, [String? name]) {
@@ -156,6 +158,7 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
     }
 
     try {
+      _socket?.close();
       _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       _socket?.broadcastEnabled = true;
 
@@ -164,9 +167,25 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
         targetIp: ip, 
         targetPort: port, 
         lastMessage: 'Started broadcasting to $ip:$port',
-        currentHeading: _lastCompassHeading,
       );
 
+      // Iniciar con la última posición conocida o la actual de inmediato
+      try {
+        Position? initialPos = await Geolocator.getLastKnownPosition();
+        initialPos ??= await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.bestForNavigation,
+          timeLimit: const Duration(seconds: 3),
+        ).catchError((_) => null);
+
+        if (initialPos != null && state.isBroadcasting) {
+          _lastElevationPosition = initialPos;
+          _sendUdpPacket(initialPos);
+        }
+      } catch (e) {
+        print('Error getting initial GPS position: $e');
+      }
+
+      _positionSubscription?.cancel();
       _positionSubscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
@@ -178,19 +197,23 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
         _sendUdpPacket(position);
       });
 
-      _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
-        if (event.heading != null) {
-          _lastCompassHeading = event.heading!;
-          if (state.isBroadcasting) {
-            state = state.copyWith(currentHeading: event.heading!);
-          }
-        }
-      });
-
-      // HEARTBEAT para el Emulador: Enviar cada 2 segundos forzosamente aunque no haya movimiento
-      _heartbeatTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-        if (state.isBroadcasting && _lastElevationPosition != null) {
+      // HEARTBEAT para mantener la transmisión constante
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+        if (!state.isBroadcasting) return;
+        if (_lastElevationPosition != null) {
           _sendUdpPacket(_lastElevationPosition!);
+        } else {
+          try {
+            final pos = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.bestForNavigation,
+              timeLimit: const Duration(seconds: 2),
+            ).catchError((_) => null);
+            if (pos != null && state.isBroadcasting) {
+              _lastElevationPosition = pos;
+              _sendUdpPacket(pos);
+            }
+          } catch (_) {}
         }
       });
       
@@ -234,10 +257,12 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
   }
 
   void _sendUdpPacket(Position position) {
-    if (_lastGoogleElevation == null || 
+    if (_lastElevationPosition == null ||
+        _lastGoogleElevation == null || 
         Geolocator.distanceBetween(_lastElevationPosition!.latitude, _lastElevationPosition!.longitude, position.latitude, position.longitude) > 5) {
       _fetchGoogleElevation(position.latitude, position.longitude); 
     }
+    _lastElevationPosition = position;
 
     final altToSend = _lastGoogleElevation ?? position.altitude;
 
@@ -245,13 +270,13 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
       'lat': position.latitude,
       'lng': position.longitude,
       'alt': altToSend,
-      'heading': _lastCompassHeading, // Usar brujula real, no direccion de movimiento
       'accuracy': position.accuracy,
       'timestamp': DateTime.now().toIso8601String(),
-      'projectId': state.projectId,
-      'projectName': state.projectName,
+      'projectId': state.projectId ?? 0,
+      'projectName': state.projectName ?? '',
       'forceCalibration': _forceCalibrationFlag,
       'manualRotation': state.manualRotationOffset,
+      'heading': 0.0,
     };
     _forceCalibrationFlag = false; // Reset flag after sending
 
@@ -277,7 +302,7 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
       }
       
       state = state.copyWith(
-        lastMessage: 'Sent: lat: ${position.latitude.toStringAsFixed(6)}, lng: ${position.longitude.toStringAsFixed(6)} (Proj: ${state.projectId})',
+        lastMessage: 'Sent: lat: ${position.latitude.toStringAsFixed(6)}, lng: ${position.longitude.toStringAsFixed(6)} (Proj: ${state.projectId ?? 0})',
         currentLat: position.latitude,
         currentLng: position.longitude,
       );
@@ -288,12 +313,10 @@ class ARCompanionNotifier extends StateNotifier<ARCompanionState> {
 
   void stopBroadcasting() {
     _positionSubscription?.cancel();
-    _compassSubscription?.cancel();
     _heartbeatTimer?.cancel();
     _socket?.close();
     
     _positionSubscription = null;
-    _compassSubscription = null;
     _heartbeatTimer = null;
     _socket = null;
     

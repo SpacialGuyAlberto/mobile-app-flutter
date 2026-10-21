@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -509,40 +508,16 @@ class _ClusterAreaDashboardScreenState extends ConsumerState<ClusterAreaDashboar
               Set<Marker> finalMarkers = Set.from(_mapData.markers);
               Set<Polyline> finalPolylines = Set.from(_mapData.polylines);
               
-              if (arState.isBroadcasting && arState.currentLat != null && arState.currentLng != null && arState.currentHeading != null) {
-                // Dibujar un pin azul claro
+              if (arState.isBroadcasting && arState.currentLat != null && arState.currentLng != null) {
+                // Dibujar un pin para indicar la posición transmitida
                 finalMarkers.add(
                   Marker(
-                    markerId: const MarkerId('my_heading_indicator'),
+                    markerId: const MarkerId('my_companion_indicator'),
                     position: LatLng(arState.currentLat!, arState.currentLng!),
-                    rotation: arState.currentHeading!,
                     icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-                    infoWindow: InfoWindow(title: 'Tú', snippet: 'Brújula: ${arState.currentHeading!.toStringAsFixed(1)}°'),
+                    infoWindow: const InfoWindow(title: 'Tú', snippet: 'GPS Broadcasting'),
                     anchor: const Offset(0.5, 0.5),
                     zIndexInt: 9999,
-                  ),
-                );
-
-                // Dibujar una línea (flecha) que apunta hacia donde mira el usuario
-                double lat1 = arState.currentLat! * math.pi / 180.0;
-                double lng1 = arState.currentLng! * math.pi / 180.0;
-                double brng = arState.currentHeading! * math.pi / 180.0;
-                double d = 40.0; // 40 metros de largo
-                double R = 6378137.0; // Radio de la tierra
-
-                double lat2 = math.asin(math.sin(lat1) * math.cos(d / R) + math.cos(lat1) * math.sin(d / R) * math.cos(brng));
-                double lng2 = lng1 + math.atan2(math.sin(brng) * math.sin(d / R) * math.cos(lat1), math.cos(d / R) - math.sin(lat1) * math.sin(lat2));
-
-                finalPolylines.add(
-                  Polyline(
-                    polylineId: const PolylineId('my_heading_line'),
-                    points: [
-                      LatLng(arState.currentLat!, arState.currentLng!),
-                      LatLng(lat2 * 180.0 / math.pi, lng2 * 180.0 / math.pi),
-                    ],
-                    color: Colors.cyanAccent,
-                    width: 6,
-                    zIndex: 9999,
                   ),
                 );
               }
@@ -644,47 +619,8 @@ class _ClusterAreaDashboardScreenState extends ConsumerState<ClusterAreaDashboar
                           const SnackBar(content: Text('Señal de calibración enviada a Unity')),
                         );
                       },
-                      child: const Icon(Icons.compass_calibration, color: Colors.white, size: 20),
+                      child: const Icon(Icons.gps_fixed, color: Colors.white, size: 20),
                     ),
-                  );
-                }
-              ),
-              Consumer(
-                builder: (context, ref, child) {
-                  final isBroadcasting = ref.watch(arCompanionProvider.select((state) => state.isBroadcasting));
-                  final manualRot = ref.watch(arCompanionProvider.select((state) => state.manualRotationOffset));
-                  if (!isBroadcasting) return const SizedBox.shrink();
-                  
-                  return Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-                        child: Text('${manualRot > 0 ? '+' : ''}${manualRot.toInt()}°', style: const TextStyle(color: Colors.white, fontSize: 10)),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          FloatingActionButton(
-                            heroTag: 'rotMinusBtn',
-                            mini: true,
-                            backgroundColor: Colors.grey[800],
-                            onPressed: () => ref.read(arCompanionProvider.notifier).adjustManualRotation(-15),
-                            child: const Icon(Icons.rotate_left, color: Colors.white, size: 20),
-                          ),
-                          const SizedBox(width: 4),
-                          FloatingActionButton(
-                            heroTag: 'rotPlusBtn',
-                            mini: true,
-                            backgroundColor: Colors.grey[800],
-                            onPressed: () => ref.read(arCompanionProvider.notifier).adjustManualRotation(15),
-                            child: const Icon(Icons.rotate_right, color: Colors.white, size: 20),
-                          ),
-                        ],
-                      ),
-                    ],
                   );
                 }
               ),
